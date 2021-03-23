@@ -1,3 +1,4 @@
+#![feature(is_sorted)]
 use debs2021::gen::challenger::*;
 use bytes::Bytes;
 use tokio::fs::File;
@@ -62,8 +63,11 @@ pub async fn main() {
     println!("Generation of {} bboxes took {}ms", bboxes.len(), bbcalc_duration.as_millis());
 
     let batch = load_batch(0).await.expect("Loading of batch failed");
-    // let timestamps = batch.current.iter().filter_map(|m| m.timestamp).collect::<Vec<_>>();
-    // println!("Is batch sorted by time? {}", timestamps.is_sorted());
+    let timestamps = batch.current
+        .iter()
+        .filter_map(|m| Some(m.timestamp.as_ref()?.seconds as i128 * 1_000_000_000 + m.timestamp.as_ref()?.nanos as i128))
+        .collect::<Vec<_>>();
+    println!("Is batch sorted by time? {}", timestamps.is_sorted());
     let measurement = batch.current.iter().next().expect("Missing measurement");
 
     let betterfind_start = tokio::time::Instant::now();
