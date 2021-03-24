@@ -19,17 +19,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         queries: vec![Query::Q1 as i32, Query::Q2 as i32],
         ..Default::default()
     };
-    let benchmark_id = client.create_new_benchmark(benchmark_conf).await?.into_inner();
-    // let locations = client.get_locations(benchmark_id).await?.into_inner();
-    // let mut buf = BytesMut::with_capacity(locations.encoded_len());
-    // locations.encode(&mut buf)?;
-    // let mut file = BufWriter::new(File::create("/run/media/maxim/PUBLIC/locations_dump.bin").await?);
-    // file.write_all(&buf).await?;
-    // file.flush().await?;
-    // drop(file);
     use prost::Message;
     use tokio::fs::File;
     use tokio::io::{AsyncWriteExt,BufWriter};
+    let benchmark_id = client.create_new_benchmark(benchmark_conf).await?.into_inner();
+    let locations = client.get_locations(benchmark_id.clone()).await?.into_inner();
+    let mut buf = BytesMut::with_capacity(locations.encoded_len());
+    locations.encode(&mut buf)?;
+    let mut file = File::create("/run/media/m/PUBLIC/locations_dump.bin").await?;
+    file.write_all(&buf).await?;
+    file.flush().await?;
+    drop(file);
 
     client.start_benchmark(benchmark_id.clone()).await?;
     for i in 0..100000 {
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let batch = client.next_batch(benchmark_id.clone()).await?.into_inner();
         let mut buf = BytesMut::with_capacity(batch.encoded_len());
         batch.encode(&mut buf).unwrap();
-        let mut file = BufWriter::new(File::create(format!("/run/media/maxim/PUBLIC/Thesis/messages/{}/batch_{}.bin", dir, i)).await?);
+        let mut file = BufWriter::new(File::create(format!("/run/media/m/PUBLIC/Thesis/messages/{}/batch_{}.bin", dir, i)).await?);
         file.write_all(&buf).await?;
         file.flush().await?;
         drop(file);
