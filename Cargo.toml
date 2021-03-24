@@ -14,6 +14,7 @@ prost-types = "0.7.0"
 bytes = "1.0.1"
 rstar = "0.8.2"
 geo = "0.17.1"
+chrono = "0.4.19"
 
 [build-dependencies]
 tonic-build = "0.4.0"
