@@ -3,12 +3,10 @@ pub mod gen;
 use crate::gen::challenger::Locations;
 use geo::{MultiPolygon,Rect,point,prelude::{Contains,BoundingRect}};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AnalysisLocation {
     zipcode: String,
     city: String,
-    qkm: f64,
-    population: i32
 }
 
 impl From<crate::gen::challenger::Location> for AnalysisLocation {
@@ -16,8 +14,6 @@ impl From<crate::gen::challenger::Location> for AnalysisLocation {
         Self {
             zipcode: loc.zipcode,
             city: loc.city,
-            qkm: loc.qkm,
-            population: loc.population,
         }
     }
 }
