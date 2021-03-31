@@ -56,7 +56,8 @@ struct MeasurementInfo {
     current_tsinfo: TimeInfo,
     current_complete: bool,
     last_tsinfo: TimeInfo,
-    last_complete: bool
+    last_complete: bool,
+    outside_germany: usize,
 }
 
 fn analyze_one(batch: &Batch) -> MeasurementInfo {
@@ -73,18 +74,23 @@ fn analyze_one(batch: &Batch) -> MeasurementInfo {
             .collect::<Vec<Timestamp>>();
     let last_complete = batch.lastyear.len() == last_timestamps.len();
     let last_tsinfo = analyze_timestamps(last_timestamps.iter());
+    let outside_germany = batch.lastyear.iter().chain(batch.current.iter()) 
+        .filter(|measurement| measurement.latitude < 47.40724 || measurement.latitude > 54.9079 || measurement.longitude < 5.98815 || measurement.longitude > 14.98853)
+        .count();
     MeasurementInfo {
         current_tsinfo,
         current_complete,
         last_tsinfo,
         last_complete,
+        outside_germany,
     }
 }
 
 #[tokio::main]
 pub async fn main() {
+    let root = std::env::var("DEBS_DATA_ROOT").expect("DEBS_DATA_ROOT not set!");
     for i in 0..100000 {
-        let batch = load_batch(i).await.expect("Loading of batch failed");
+        let batch = load_batch(&root, i).await.expect("Loading of batch failed");
         let analyzed = analyze_one(&batch);
         println!("Batch {}: {:?}", i, analyzed);
     }
