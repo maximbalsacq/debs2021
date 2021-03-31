@@ -120,6 +120,7 @@ dependencies = [
  "prost",
  "prost-types",
  "rstar",
+ "thiserror",
  "tokio",
  "tonic",
  "tonic-build",

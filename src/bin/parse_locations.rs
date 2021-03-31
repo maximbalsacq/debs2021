@@ -1,37 +1,12 @@
 #![feature(is_sorted)]
-use debs2021::gen::challenger::*;
-use bytes::Bytes;
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use debs2021::io::*;
 use geo::prelude::*;
-
-use prost::Message;
-
-async fn load_locations() -> Locations {
-    let mut f = File::open("/run/media/m/PUBLIC/Thesis/locations_dump.bin").await.expect("Failed to open file");
-    let mut data = vec![];
-    f.read_to_end(&mut data).await.expect("I/O read fail");
-    let b = Bytes::from(data);
-    Message::decode(b).expect("Failed to decode locations")
-}
-
-async fn load_batch(num: usize) -> Result<Batch, &'static str> {
-    let dir = num/1000;
-    let mut f = File::open(format!("/run/media/m/PUBLIC/Thesis/messages/{}/batch_{}.bin", dir, num))
-        .await
-        .map_err(|_| "Failed to open file")?;
-    let mut data = vec![];
-    f.read_to_end(&mut data)
-        .await
-        .map_err(|_| "I/O read fail")?;
-    let b = Bytes::from(data);
-    Ok(Batch::decode(b).map_err(|_| "Failed to decode batch")?)
-}
 
 #[tokio::main]
 pub async fn main() {
+    let root = std::env::var("DEBS_DATA_ROOT").expect("DEBS_DATA_ROOT not set!");
     let load_start = tokio::time::Instant::now();
-    let locations = load_locations().await;
+    let locations = load_locations(&root).await.expect("Loading of locations failed");
     let load_duration = load_start.elapsed();
     println!("Loading of locations took {}ms", load_duration.as_millis());
 
@@ -62,7 +37,7 @@ pub async fn main() {
     let bbcalc_duration = bbcalc_start.elapsed();
     println!("Generation of {} bboxes took {}ms", bboxes.len(), bbcalc_duration.as_millis());
 
-    let batch = load_batch(0).await.expect("Loading of batch failed");
+    let batch = load_batch(&root, 0).await.expect("Loading of batch failed");
     let timestamps = batch.current
         .iter()
         .filter_map(|m| Some(m.timestamp.as_ref()?.seconds as i128 * 1_000_000_000 + m.timestamp.as_ref()?.nanos as i128))

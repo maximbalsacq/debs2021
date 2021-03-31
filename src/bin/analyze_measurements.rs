@@ -1,22 +1,6 @@
 use debs2021::gen::challenger::*;
-use bytes::Bytes;
-use prost::Message;
+use debs2021::io::load_batch;
 
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
-
-async fn load_batch(num: usize) -> Result<Batch, &'static str> {
-    let dir = num/1000;
-    let mut f = File::open(format!("/run/media/m/PUBLIC/Thesis/messages/{}/batch_{}.bin", dir, num))
-        .await
-        .map_err(|_| "Failed to open file")?;
-    let mut data = vec![];
-    f.read_to_end(&mut data)
-        .await
-        .map_err(|_| "I/O read fail")?;
-    let b = Bytes::from(data);
-    Ok(Batch::decode(b).map_err(|_| "Failed to decode batch")?)
-}
 
 use prost_types::Timestamp;
 use chrono::naive::NaiveDateTime;

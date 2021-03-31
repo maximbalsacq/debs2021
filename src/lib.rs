@@ -1,4 +1,5 @@
 pub mod gen;
+pub mod io;
 
 use crate::gen::challenger::Locations;
 use geo::{MultiPolygon,Rect,point,prelude::{Contains,BoundingRect}};

@@ -1,23 +1,14 @@
 #![feature(slice_partition_dedup)]
-use debs2021::gen::challenger::*;
-use bytes::Bytes;
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
-
-use prost::Message;
-
-async fn load_locations() -> Locations {
-    let mut f = File::open("/run/media/m/PUBLIC/Thesis/locations_dump.bin").await.expect("Failed to open file");
-    let mut data = vec![];
-    f.read_to_end(&mut data).await.expect("I/O read fail");
-    let b = Bytes::from(data);
-    Message::decode(b).expect("Failed to decode locations")
-}
+use debs2021::io::load_locations;
 
 #[tokio::main]
 pub async fn main() {
+    let root = std::env::var("DEBS_DATA_ROOT").expect("DEBS_DATA_ROOT not set!");
     let load_start = tokio::time::Instant::now();
-    let locations = load_locations().await.locations;
+    let locations = load_locations(&root)
+        .await
+        .expect("Failed to load locations")
+        .locations;
     let load_duration = load_start.elapsed();
     println!("Loading of locations took {}ms", load_duration.as_millis());
 
