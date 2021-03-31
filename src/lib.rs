@@ -38,7 +38,7 @@ impl AnalysisLocations {
                             geo::LineString::from_iter(
                                 poly.points
                                 .iter()
-                                .map(|point| (point.latitude, point.longitude))),
+                                .map(|point| (point.longitude, point.latitude))),
                             // interior ring (unused)
                             vec![]
                         ))
@@ -60,5 +60,48 @@ impl AnalysisLocations {
                 bounding_rect.contains(&p) && bounding_poly.contains(&p)
             })
             .map(|(location, _, _)| location)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn check_locating_works() {
+        use super::AnalysisLocations;
+        use super::io::load_locations;
+        let root = std::env::var("DEBS_DATA_ROOT").expect("DEBS_DATA_ROOT not set!");
+        let locations = AnalysisLocations::new(load_locations(&root)
+            .await
+            .expect("Failed to load locations"));
+        let mut outside_germany_iter = locations.localize(46.0, 20.0);
+        assert_eq!(outside_germany_iter.next(), None);
+        let mut freiburg_iter = locations.localize(47.99422, 7.849722);
+        let freiburg = freiburg_iter.next();
+        assert!(freiburg.is_some());
+        assert_eq!(&freiburg.unwrap().city, "Freiburg im Breisgau");
+        assert_eq!(freiburg_iter.next(), None);
+    }
+
+    #[tokio::test]
+    async fn check_locating_samples_works() {
+        use super::AnalysisLocations;
+        use super::io::{load_locations,load_batch_from};
+        let root = std::env::var("DEBS_DATA_ROOT").expect("DEBS_DATA_ROOT not set!");
+        let locations = AnalysisLocations::new(load_locations(&root)
+            .await
+            .expect("Failed to load locations"));
+        let batch = load_batch_from(&format!("{}/test_batch.bin", root))
+            .await
+            .expect("Failed to load batch");
+        for measurement in batch.lastyear.iter().chain(batch.current.iter()) {
+            if measurement.latitude < 47.40724 || measurement.latitude > 54.9079 || measurement.longitude < 5.98815 || measurement.longitude > 14.98853 {
+                // skip measurements outside germany
+                continue;
+            }
+            let mut loc = locations.localize(measurement.latitude, measurement.longitude);
+            let matching_loc = loc.next();
+            matching_loc.expect(&format!("Did not find a matching location for latitude {}, longitude {}", measurement.latitude, measurement.longitude)); // Fail test if no location found
+            assert_eq!(loc.next(), None);
+        }
     }
 }
