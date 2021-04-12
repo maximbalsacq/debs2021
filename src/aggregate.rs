@@ -142,8 +142,6 @@ pub struct AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut>
 where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
-    TCur: 'static,
-    TLast: 'static,
     F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
 {
     current_iter: ICur,
@@ -208,8 +206,6 @@ impl<ICur, TCur, ILast, TLast, F, TOut> Iterator for AnalysisWindowsMap<ICur, TC
 where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
-    TCur: 'static,
-    TLast: 'static,
     TOut: 'static,
     F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
 {
@@ -248,8 +244,6 @@ impl<ICur, TCur, ILast, TLast> IterPair<ICur, ILast>
 where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
-    TCur: 'static,
-    TLast: 'static,
     {
     pub fn with_analysis_windows<F, TOut>(self, current_window_size: usize, lastyear_window_size: usize, map_func: F) -> AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut>
     where
