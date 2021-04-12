@@ -277,7 +277,7 @@ mod window_test {
         ]);
     }
 
-    /* #[test]
+    #[test]
     fn split_join_test() {
         let x = (1..5)
             .map(|x| (x, x+1))
@@ -294,7 +294,7 @@ mod window_test {
             2+3+3+4,
             3+4+4+5,
         ]);
-    } */
+    }
 }
 
 

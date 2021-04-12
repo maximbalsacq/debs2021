@@ -75,7 +75,7 @@ where
 }
 
 
-fn split<A, B, It>(it: It) -> (First<A, B, It>, Second<A, B, It>)
+fn split<A, B, It>(it: It) -> IterPair<First<A, B, It>, Second<A, B, It>>
 where
     It: Iterator<Item = (A, B)>,
 {
@@ -85,13 +85,13 @@ where
         second: VecDeque::new(),
     }));
 
-    (First { data: data.clone() }, Second { data })
+    IterPair(First { data: data.clone() }, Second { data })
 }
 
 pub struct IterPair<A,B>(pub A, pub B);
 
 pub trait Spliter<A,B> : Iterator<Item=(A,B)> {
-    fn spliter(self) -> (First<A, B, Self>, Second<A, B, Self>) where Self: Sized {
+    fn spliter(self) -> IterPair<First<A, B, Self>, Second<A, B, Self>> where Self: Sized {
         split(self)
     }
 }
@@ -99,10 +99,10 @@ impl<A,B,T: Sized> Spliter<A,B> for T where T: Iterator<Item = (A, B)> {}
 
 #[cfg(test)]
 mod spliter_test {
-    use super::Spliter;
+    use super::{IterPair,Spliter};
     #[test]
     fn simple_spliter_test() {
-        let (first, second) = (1..5)
+        let IterPair(first, second) = (1..5)
             .map(|x| (x, 6.0-x as f32/2.0))
             .spliter();
         assert_eq!(first.collect::<Vec<_>>(), vec![1, 2, 3, 4]);
