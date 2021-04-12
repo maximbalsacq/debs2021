@@ -169,17 +169,21 @@ where
         let mut lastyear_queue = VecDeque::with_capacity(lastyear_window_size+1);
 
         for idx in 0..usize::max(current_window_size, lastyear_window_size) {
-            if idx < current_window_size {
-                current_queue.push_back(match current_iter.next() {
-                    Some(x) => x,
-                    None => break,
-                });
+            current_queue.push_back(match current_iter.next() {
+                Some(x) => x,
+                None => break,
+            });
+            if idx >= current_window_size {
+                current_queue.pop_front();
             }
-            if idx < lastyear_window_size {
-                lastyear_queue.push_back(match lastyear_iter.next() {
-                    Some(x) => x,
-                    None => break,
-                });
+
+            lastyear_queue.push_back(match lastyear_iter.next() {
+                Some(x) => x,
+                None => break,
+            });
+
+            if idx >= lastyear_window_size {
+                lastyear_queue.pop_front();
             }
         }
         let completed = {
