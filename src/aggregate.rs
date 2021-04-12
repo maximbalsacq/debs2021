@@ -295,6 +295,23 @@ mod window_test {
             3+4+4+5,
         ]);
     }
+
+    #[test]
+    fn different_windowsizes_test() {
+        let x = (1..5)
+            .map(|x| (x, x+1))
+            .spliter()
+            .with_analysis_windows(1, 3, |window| {
+                let current_total : i32 = window.current.sum();
+                let lastyear_total : i32 = window.lastyear.sum();
+                current_total + lastyear_total
+            })
+            .collect::<Vec<i32>>();
+        assert_eq!(x, vec![
+            3+(2+3+4),
+            4+(3+4+5),
+        ]);
+    }
 }
 
 
