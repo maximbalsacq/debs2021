@@ -1,4 +1,4 @@
-type CityId = u32;
+use crate::CityId;
 
 #[derive(Debug, Copy, Clone)]
 pub struct LocalizedMeasurement {

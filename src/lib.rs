@@ -7,29 +7,29 @@ pub mod spliter;
 use crate::gen::challenger::Locations;
 use geo::{MultiPolygon,Rect,point,prelude::{Contains,BoundingRect}};
 
+type CityId = u32;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct AnalysisLocation {
     zipcode: String,
-    city: String,
-}
-
-impl From<crate::gen::challenger::Location> for AnalysisLocation {
-    fn from(loc: crate::gen::challenger::Location) -> Self {
-        Self {
-            zipcode: loc.zipcode,
-            city: loc.city,
-        }
-    }
+    cityid: CityId,
 }
 
 #[derive(Debug)]
 pub struct AnalysisLocations {
-    locations: Vec<(AnalysisLocation, Rect<f64>, MultiPolygon<f64>)>
+    locations: Vec<(AnalysisLocation, Rect<f64>, MultiPolygon<f64>)>,
+    /// a map from CityId to city name, where CityId is simply an index
+    /// into the array
+    known_cities: Vec<String>,
 }
 
 impl AnalysisLocations {
     pub fn new(locations: Locations) -> Self {
         use std::iter::FromIterator;
+        use std::collections::BTreeMap;
+        let mut known_cities_map = BTreeMap::new();
+        let mut known_cities = vec![];
+        let mut next_id = 0u32;
         let locations = locations.locations.into_iter()
             .map(|location| {
                 let multipoly = geo::MultiPolygon::from_iter(
@@ -47,11 +47,25 @@ impl AnalysisLocations {
                         ))
                 );
                 let boundingrect = multipoly.bounding_rect().expect("Location should contain >= 1 polygon");
-                (location.into(), boundingrect, multipoly)
+                let cityid = match known_cities_map.get(&location.city) {
+                    Some(id) => *id,
+                    None => {
+                        known_cities_map.insert(location.city.clone(), next_id);
+                        known_cities.push(location.city);
+                        next_id += 1;
+                        next_id - 1
+                    }
+                };
+                let location = AnalysisLocation {
+                    zipcode: location.zipcode,
+                    cityid,
+                };
+                (location, boundingrect, multipoly)
             })
             .collect();
         Self {
-            locations
+            locations,
+            known_cities
         }
     }
 
@@ -63,6 +77,10 @@ impl AnalysisLocations {
                 bounding_rect.contains(&p) && bounding_poly.contains(&p)
             })
             .map(|(location, _, _)| location)
+    }
+
+    pub fn lookup(&self, cityid: CityId) -> &str {
+        &self.known_cities[cityid as usize]
     }
 }
 
@@ -81,7 +99,7 @@ mod tests {
         let mut freiburg_iter = locations.localize(47.99422, 7.849722);
         let freiburg = freiburg_iter.next();
         assert!(freiburg.is_some());
-        assert_eq!(&freiburg.unwrap().city, "Freiburg im Breisgau");
+        assert_eq!(locations.lookup(freiburg.unwrap().cityid), "Freiburg im Breisgau");
         assert_eq!(freiburg_iter.next(), None);
     }
 
