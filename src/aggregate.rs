@@ -419,8 +419,14 @@ mod particle_aggregate_test {
 use std::collections::HashSet;
 
 #[derive(Debug,Default,Clone)]
-struct ActiveCities {
+pub struct ActiveCities {
     inner: HashSet<CityId>,
+}
+
+impl ActiveCities {
+    pub fn is_active(&self, city: CityId) -> bool {
+        self.inner.contains(&city)
+    }
 }
 
 impl std::iter::FromIterator<CityId> for ActiveCities {
