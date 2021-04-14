@@ -344,6 +344,27 @@ impl ParticleAggregate {
     }
 }
 
+impl std::ops::Add for ParticleAggregate {
+    type Output=Self;
+    fn add(self, rhs: ParticleAggregate) -> Self {
+        Self {
+            sum_p1: self.sum_p1 + rhs.sum_p1,
+            sum_p2: self.sum_p2 + rhs.sum_p2,
+            denom: self.denom + rhs.denom,
+        }
+    }
+}
+
+impl std::ops::AddAssign for ParticleAggregate {
+    fn add_assign(&mut self, rhs: ParticleAggregate) {
+        *self = Self {
+            sum_p1: self.sum_p1 + rhs.sum_p1,
+            sum_p2: self.sum_p2 + rhs.sum_p2,
+            denom: self.denom + rhs.denom,
+        };
+    }
+}
+
 impl std::iter::FromIterator<ParticleAggregate> for ParticleAggregate {
     fn from_iter<T: IntoIterator<Item = ParticleAggregate>>(iter: T) -> Self {
         let (sum_p1, sum_p2, denom) = iter
