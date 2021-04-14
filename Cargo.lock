@@ -74,6 +74,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
+name = "bencher"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dfdb4953a096c551ce9ace855a604d702e6e62d77fac690575ae347571717f5"
+
+[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -114,6 +120,7 @@ dependencies = [
 name = "debs2021"
 version = "0.1.0"
 dependencies = [
+ "bencher",
  "bytes",
  "chrono",
  "geo",
@@ -852,9 +859,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.2.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8190d04c665ea9e6b6a0dc45523ade572c088d2e6566244c1122671dbf4ae3a"
+checksum = "83f0c8e7c0addab50b663055baf787d0af7f413a46e6e7fb9559a4e4db7137a5"
 dependencies = [
  "autocfg",
  "bytes",
@@ -908,9 +915,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ba8f479158947373b6df40cf48f4779bb25c99ca3c661bd95e0ab1963ad8b0e"
+checksum = "556dc31b450f45d18279cfc3d2519280273f460d5387e6b7b24503e65d206f8b"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -937,9 +944,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1e8546fd40d56d28089835c0a81bb396848103b00f888aea42d46eb5974df07"
+checksum = "c695de27302f4697191dda1c7178131a8cb805463dda02864acb80fe1322fdcf"
 dependencies = [
  "proc-macro2",
  "prost-build",
