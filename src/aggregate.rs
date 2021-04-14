@@ -446,11 +446,11 @@ impl std::ops::BitOr for ActiveCities {
     }
 }
 
-type CityParticleMap = std::collections::HashMap<CityId, ParticleAggregate>;
+pub type CityParticleMap = std::collections::HashMap<CityId, ParticleAggregate>;
 // type CityParticleMap = std::collections::BTreeMap<CityId, ParticleAggregate>;
 
 #[derive(Clone)]
-struct PreAggregate<I>
+pub struct PreAggregate<I>
 where
     I : Iterator<Item = Vec<LocalizedMeasurement>> {
     inner: I
