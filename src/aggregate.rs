@@ -473,3 +473,11 @@ where
         Some(map)
     }
 }
+
+pub trait WithPreAggregate : Iterator<Item = Vec<LocalizedMeasurement>> {
+    fn preaggregate(self) -> PreAggregate<Self> where Self: Sized {
+        PreAggregate { inner: self }
+    }
+}
+
+impl<T: Sized> WithPreAggregate for T where T: Iterator<Item = Vec<LocalizedMeasurement>> {}
