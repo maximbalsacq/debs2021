@@ -3,6 +3,7 @@ pub mod io;
 pub mod aqi;
 pub mod aggregate;
 pub mod spliter;
+pub mod pipeline;
 
 use crate::gen::challenger::Locations;
 use geo::{MultiPolygon,Rect,point,prelude::{Contains,BoundingRect}};
