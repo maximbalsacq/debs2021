@@ -30,4 +30,52 @@ pub async fn main() {
     if let Some(no_polys) = locations.iter().find(|loc| loc.polygons.is_empty()) {
         println!("At least one location has no polygons: {:?}", no_polys);
     }
+
+    let location_count = locations.len();
+    let poly_count : usize = locations.iter().map(|l| l.polygons.len()).sum();
+    let points_count : usize = locations
+        .iter()
+        .map(|l| l.polygons.iter()
+            .map(|p| p.points.len())
+            .sum::<usize>())
+        .sum();
+    println!(
+        "{} polygons for {} locations ({} per location)",
+        poly_count,
+        location_count,
+        poly_count as f64 / location_count as f64
+    );
+
+    println!(
+        "{} points for {} polygons ({} per polgon/{} per location)",
+        points_count,
+        poly_count,
+        points_count as f64 / poly_count as f64,
+        points_count as f64 / location_count as f64
+    );
+
+
+    use std::iter::FromIterator;
+    let convex_poly_count : usize = locations.iter()
+        .map(|l| l.polygons.iter())
+        .flatten()
+        .map(|poly| {
+            let p = geo::Polygon::new(
+                // exterior ring
+                geo::LineString::from_iter(
+                    poly.points
+                    .iter()
+                    .map(|point| (point.longitude, point.latitude))),
+                    // interior ring (unused)
+                    vec![]
+            );
+            usize::from(p.is_convex())
+        })
+        .sum();
+    
+    println!("Convex: {}/{} ({:.03}%)",
+        convex_poly_count,
+        poly_count,
+        (convex_poly_count as f64 / poly_count as f64) * 100.0
+    );
 }
