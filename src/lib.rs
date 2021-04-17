@@ -18,10 +18,37 @@ pub struct AnalysisLocation {
 
 #[derive(Debug)]
 pub struct AnalysisLocations {
-    locations: Vec<(AnalysisLocation, Rect<f64>, MultiPolygon<f64>)>,
+    bboxtree: RTree<RTreeLocation>,
+    locations: Vec<(AnalysisLocation, MultiPolygon<f64>)>,
     /// a map from CityId to city name, where CityId is simply an index
     /// into the array
     known_cities: Vec<String>,
+}
+
+use rstar::{AABB,RTree,RTreeObject,Envelope,Point,PointDistance};
+
+#[derive(Debug)]
+struct RTreeLocation {
+    bbox: AABB<[f64; 2]>,   
+    /// index into locations array
+    idx: u32,
+}
+
+impl RTreeObject for RTreeLocation {
+    type Envelope = AABB<[f64; 2]>;
+
+    fn envelope(&self) -> Self::Envelope {
+        self.bbox.clone()
+    }
+}
+
+impl PointDistance for RTreeLocation {
+    fn distance_2(
+        &self,
+        point: &[f64; 2],
+    ) -> <[f64;2] as Point>::Scalar {
+        self.bbox.distance_2(point)
+    }
 }
 
 impl AnalysisLocations {
@@ -31,7 +58,7 @@ impl AnalysisLocations {
         let mut known_cities_map = BTreeMap::new();
         let mut known_cities = vec![];
         let mut next_id = 0u32;
-        let locations = locations.locations.into_iter()
+        let locations : Vec<(AnalysisLocation, MultiPolygon<f64>)> = locations.locations.into_iter()
             .map(|location| {
                 let multipoly = geo::MultiPolygon::from_iter(
                     location
@@ -47,7 +74,6 @@ impl AnalysisLocations {
                             vec![]
                         ))
                 );
-                let boundingrect = multipoly.bounding_rect().expect("Location should contain >= 1 polygon");
                 let cityid = match known_cities_map.get(&location.city) {
                     Some(id) => *id,
                     None => {
@@ -61,23 +87,40 @@ impl AnalysisLocations {
                     zipcode: location.zipcode,
                     cityid,
                 };
-                (location, boundingrect, multipoly)
+                (location, multipoly)
             })
             .collect();
+        let bboxitems = locations
+            .iter()
+            .enumerate()
+            .map(|(idx, (_, multipoly))| {
+                let boundingrect = multipoly.bounding_rect().expect("Location should contain >= 1 polygon");
+                let (minx, miny) = boundingrect.min().x_y();
+                let (maxx, maxy) = boundingrect.max().x_y();
+                let bbox = AABB::from_corners([minx, miny], [maxx, maxy]);
+                RTreeLocation {
+                    bbox,
+                    idx: idx as u32,
+                }
+            })
+            .collect::<Vec<_>>();
+        let bboxtree = RTree::bulk_load(bboxitems);
         Self {
+            bboxtree,
             locations,
             known_cities
         }
     }
 
     pub fn localize(&self, latitude: f32, longitude: f32) -> impl Iterator<Item=&AnalysisLocation> {
-        self.locations
-            .iter()
-            .filter(move |(_, bounding_rect, bounding_poly)| {
+        self.bboxtree
+            .locate_all_at_point(&[longitude as f64, latitude as f64])
+            .map(move |treeobject| &self.locations[treeobject.idx as usize])
+            .filter(move |(_, bounding_poly)| {
                 let p = point!(x: f64::from(longitude), y: f64::from(latitude));
-                bounding_rect.contains(&p) && bounding_poly.contains(&p)
+                bounding_poly.contains(&p)
             })
-            .map(|(location, _, _)| location)
+            .map(|(location, _)| location)
     }
 
     pub fn lookup(&self, cityid: CityId) -> &str {
