@@ -1,3 +1,4 @@
+#![feature(or_patterns)]
 pub mod gen;
 pub mod io;
 pub mod aqi;
@@ -6,7 +7,7 @@ pub mod spliter;
 pub mod pipeline;
 
 use crate::gen::challenger::Locations;
-use geo::{MultiPolygon,Rect,point,prelude::{Contains,BoundingRect}};
+use geo::{MultiPolygon,point,prelude::{Contains,BoundingRect}};
 
 type CityId = u32;
 
@@ -16,16 +17,21 @@ pub struct AnalysisLocation {
     cityid: CityId,
 }
 
+
+use std::sync::atomic::AtomicUsize;
 #[derive(Debug)]
 pub struct AnalysisLocations {
     bboxtree: RTree<RTreeLocation>,
     locations: Vec<(AnalysisLocation, MultiPolygon<f64>)>,
+    cache: Vec<LocationCache>,
     /// a map from CityId to city name, where CityId is simply an index
     /// into the array
     known_cities: Vec<String>,
+    pub cachehits: AtomicUsize,
+    pub cachemisses: AtomicUsize,
 }
 
-use rstar::{AABB,RTree,RTreeObject,Envelope,Point,PointDistance};
+use rstar::{AABB,RTree,RTreeObject,Point,PointDistance};
 
 #[derive(Debug)]
 struct RTreeLocation {
@@ -51,6 +57,138 @@ impl PointDistance for RTreeLocation {
     }
 }
 
+#[derive(Debug,Default)]
+struct LocationCacheItem {
+    x: f32,
+    y: f32,
+    rsquare: f32,
+}
+
+impl PartialEq for LocationCacheItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.rsquare == other.rsquare && self.x == other.x && self.y == other.y
+    }
+}
+impl Eq for LocationCacheItem {}
+
+impl PartialOrd for LocationCacheItem {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        match self.rsquare.partial_cmp(&other.rsquare) {
+            o @ Some(Ordering::Less | Ordering::Greater) => o,
+            Some(Ordering::Equal) => match self.x.partial_cmp(&other.x) {
+                o @ Some(Ordering::Less | Ordering::Greater) => o,
+                Some(Ordering::Equal) => self.y.partial_cmp(&other.y),
+                None => None
+            }
+            None => None,
+        }
+    }
+}
+
+impl Ord for LocationCacheItem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(&other).unwrap()
+    }
+}
+
+impl RTreeObject for LocationCacheItem {
+    type Envelope = AABB<[f32; 2]>;
+
+    fn envelope(&self) -> Self::Envelope {
+        AABB::from_point([self.x, self.y])
+    }
+}
+
+impl PointDistance for LocationCacheItem {
+    fn distance_2(
+        &self,
+        point: &[f32; 2],
+    ) -> <[f32;2] as Point>::Scalar {
+        self.envelope().distance_2(point)
+    }
+}
+
+use std::sync::RwLock;
+
+const CACHE_SIZE: usize = 64;
+
+use arrayvec::ArrayVec;
+use rstar::primitives::Line;
+#[derive(Debug,Default)]
+struct LocationCache {
+    lines: RTree<Line<[f32; 2]>>,
+    // items: RwLock<RTree<LocationCacheItem, LocationRTreeParams>>,
+    items: RwLock<ArrayVec<LocationCacheItem, CACHE_SIZE>>,
+}
+
+impl LocationCache {
+    fn new(locations: &crate::gen::challenger::Location) -> Self {
+        let points = locations.polygons
+            .iter()
+            .flat_map(|poly| poly.points.iter())
+            .map(|point| [point.longitude as f32, point.latitude as f32])
+            .collect::<Vec<_>>();
+        let points_len = points.len();
+        assert!(points_len > 0);
+        let lines = (0..points_len)
+            .map(|idx| {
+                let first_point = points[idx];
+                let second_point = if idx != points_len - 1 {
+                    points[idx+1]
+                } else {
+                    points[0] // last point connects to first
+                };
+                rstar::primitives::Line::new(first_point, second_point)
+            })
+            .collect::<Vec<_>>();
+        let lines = RTree::bulk_load(lines);
+        LocationCache {
+            lines,
+            // items: RwLock::new(RTree::new_with_params()),
+            // items: RwLock::new(Vec::with_capacity(<LocationRTreeParams as rstar::RTreeParams>::MAX_SIZE)),
+            items: RwLock::new(ArrayVec::new()),
+        }
+    }
+
+    fn contains(&self, latitude: f32, longitude: f32) -> bool {
+        self.items
+            .read()
+            .unwrap()
+            .iter()
+            .map(|item| (item, [item.x, item.y].distance_2(&[longitude, latitude])))
+            .any(|(item, distance)| distance < item.rsquare)
+    }
+
+    fn add(&self, latitude: f32, longitude: f32) {
+        if self.items.read().unwrap().len() >= CACHE_SIZE {
+            return;
+        }
+
+        let rsquare = self.lines.nearest_neighbor_iter_with_distance_2(&[longitude, latitude])
+            .map(|(_line, distance)| distance)
+            .next()
+            .expect("Should have at least two points");
+        if rsquare < 0.00001 {
+            // don't keep items very close to the border
+            return;
+        }
+        
+        let mut items = self.items.write().unwrap();
+        if items.len() >= CACHE_SIZE {
+            // can happen since read lock was dropped previously
+            // just abort
+            return;
+        }
+        items.push(LocationCacheItem {
+            x: longitude,
+            y: latitude,
+            rsquare,
+        });
+        items.sort();
+    }
+}
+
 impl AnalysisLocations {
     pub fn new(locations: Locations) -> Self {
         use std::iter::FromIterator;
@@ -58,6 +196,9 @@ impl AnalysisLocations {
         let mut known_cities_map = BTreeMap::new();
         let mut known_cities = vec![];
         let mut next_id = 0u32;
+        let cache : Vec<LocationCache> = locations.locations.iter()
+            .map(|location| LocationCache::new(location))
+            .collect();
         let locations : Vec<(AnalysisLocation, MultiPolygon<f64>)> = locations.locations.into_iter()
             .map(|location| {
                 let multipoly = geo::MultiPolygon::from_iter(
@@ -108,19 +249,47 @@ impl AnalysisLocations {
         Self {
             bboxtree,
             locations,
-            known_cities
+            known_cities,
+            cache,
+            cachehits: AtomicUsize::from(0),
+            cachemisses: AtomicUsize::from(0),
         }
     }
 
     pub fn localize(&self, latitude: f32, longitude: f32) -> impl Iterator<Item=&AnalysisLocation> {
         self.bboxtree
             .locate_all_at_point(&[longitude as f64, latitude as f64])
-            .map(move |treeobject| &self.locations[treeobject.idx as usize])
-            .filter(move |(_, bounding_poly)| {
+            .filter_map(move |treeobject| {
+                /* 
+                // same code w/o cache. uncomment if you want to compare
+                let (location, bounding_poly) = &self.locations[treeobject.idx as usize];
                 let p = point!(x: f64::from(longitude), y: f64::from(latitude));
-                bounding_poly.contains(&p)
+                if bounding_poly.contains(&p) {
+                    Some(location)
+                } else {
+                    None
+                }
+                */
+                if self.cache[treeobject.idx as usize].contains(latitude, longitude) {
+                    debug_assert!({
+                        let (_, bounding_poly) = &self.locations[treeobject.idx as usize];
+                        let p = point!(x: f64::from(longitude), y: f64::from(latitude));
+                        bounding_poly.contains(&p)
+                    });
+                    self.cachehits.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                    Some(&self.locations[treeobject.idx as usize].0)
+                } else {
+                    let (location, bounding_poly) = &self.locations[treeobject.idx as usize];
+                    let p = point!(x: f64::from(longitude), y: f64::from(latitude));
+                    if bounding_poly.contains(&p) {
+                        self.cache[treeobject.idx as usize].add(latitude, longitude);
+                        self.cachemisses.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                        Some(location)
+                    } else {
+                        None
+                    }
+                }
             })
-            .map(|(location, _)| location)
     }
 
     pub fn lookup(&self, cityid: CityId) -> &str {
