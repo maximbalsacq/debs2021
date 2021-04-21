@@ -24,11 +24,30 @@ fn load_batch_from(filename: &str) -> Result<Batch, LoadError> {
     Batch::decode(b).map_err(|source| LoadError::FileDecodeError { filename: filename.to_owned(), source })
 }
 
+use std::sync::mpsc::*;
+use std::thread;
+fn start_batch_loader_thread(root: &str, batches: std::ops::Range<usize>) -> Receiver<Result<Batch, LoadError>> {
+    let (sender, receiver) = sync_channel(20); // load up to X batches in advance
+    let root = root.to_owned();
+    thread::spawn(move || {
+        for i in batches {
+           sender.send(load_batch(&root, i)).unwrap();
+        }
+    });
+    receiver
+}
+
 #[tokio::main]
 pub async fn main() {
     let root = std::env::var("DEBS_DATA_ROOT").expect("DEBS_DATA_ROOT not set!");
-    let batch_iter = (0..1000)
+    /*
+    let batch_iter = (0..5000)
         .map(|i| { load_batch(&root, i).expect("Loading of batch failed") });
+    */
+    let batch_iter = start_batch_loader_thread(&root, 0..5000)
+        .into_iter()
+        .map(|b| b.expect("Loading of batch failed"));
+
     let locations = load_locations(&root)
         .await
         .expect("Failed to load locations");
