@@ -34,15 +34,21 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
             p2: meas.p2,
         })
     };
-    let IterPair(batch_current_iter, batch_lastyear_iter) = batches_iter.map(|batch| {
+    use rayon::prelude::*;
+    let IterPair(batch_current_iter, batch_lastyear_iter) = batches_iter
+        .map(|batch| {
         let batch_seq_id = batch.seq_id;
 
         let current_iter = batch.current
-            .into_iter()
-            .filter_map(move |m| localize(m, batch_seq_id));
+            .into_par_iter()
+            .filter_map(move |m| localize(m, batch_seq_id))
+            .collect::<Vec<_>>()
+            .into_iter();
         let lastyear_iter = batch.lastyear
-            .into_iter()
-            .filter_map(move |m| localize(m, batch_seq_id));
+            .into_par_iter()
+            .filter_map(move |m| localize(m, batch_seq_id))
+            .collect::<Vec<_>>()
+            .into_iter();
         (current_iter, lastyear_iter)
     }).spliter();
 
