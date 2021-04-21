@@ -68,6 +68,8 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
         .with_analysis_windows(5*24*(60/5), 5*24*(60/5), |window| {
             let active_cities = window.current
                 .clone() // only clones the iterator, not the underlying values
+                .rev()
+                .take(2) // get last 2 batches of 5 minutes = 10 minute window
                 .flat_map(|city_aggregate_map : &CityParticleMap| city_aggregate_map.keys())
                 .cloned() // clone city ids. since this is a u32, it should be a simple copy
                 .collect::<ActiveCities>();
@@ -75,7 +77,8 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
             let last_day_aqi = {
                 let last_day_windows = window.current
                     .clone()
-                    .skip(4*24*(60/5)); // skip to lasy day
+                    .rev()
+                    .take(24*(60/5)); // take values from last day
                 get_final_aggregate(&active_cities, last_day_windows)
             };
 
