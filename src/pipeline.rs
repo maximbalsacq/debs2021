@@ -149,7 +149,9 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
             }
         });
 
-    for res in resiter.take(100) {
-        dbg!(res.topkimproved);
+    for _res in resiter.take(100) {
+        // dbg!(res.topkimproved);
     }
+    use std::sync::atomic::Ordering;
+    println!("Cache hits/misses: {}/{}", locations.cachehits.load(Ordering::SeqCst), locations.cachemisses.load(Ordering::SeqCst));
 }
