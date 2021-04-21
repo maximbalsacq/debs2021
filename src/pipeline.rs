@@ -95,16 +95,16 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                 .into_iter()
                 .filter_map(|(cityid, aggregate)| {
                     // Get this year's 5 day AQI
-                    let current_aqip1 = AQIValue::from_pm10(aggregate.p1()).expect("Average current p1 invalid");
-                    let current_aqip2 = AQIValue::from_pm25(aggregate.p2()).expect("Average current p2 invalid");
+                    let current_aqip1 = AQIValue::from_pm10(aggregate.p1())?;//.expect("Average current p1 invalid");
+                    let current_aqip2 = AQIValue::from_pm25(aggregate.p2())?;//.expect("Average current p2 invalid");
                     let current_aqi = current_aqip1.get_asdebs().max(current_aqip2.get_asdebs());
 
                     // Get last year's 5 day AQI
                     // If no sensor data was available in given city for lastyear window period,
                     // calculation of improvement is impossible. Skip those cases.
                     let lastyear_aggregate = lastyear_aggregates.get(&cityid)?;
-                    let lastyear_aqip1 = AQIValue::from_pm10(lastyear_aggregate.p1()).expect("Average lastyear p1 invalid");
-                    let lastyear_aqip2 = AQIValue::from_pm25(lastyear_aggregate.p2()).expect("Average lastyear p2 invalid");
+                    let lastyear_aqip1 = AQIValue::from_pm10(lastyear_aggregate.p1())?;//.expect("Average lastyear p1 invalid");
+                    let lastyear_aqip2 = AQIValue::from_pm25(lastyear_aggregate.p2())?;//.expect("Average lastyear p2 invalid");
                     let lastyear_aqi = lastyear_aqip1.get_asdebs().max(lastyear_aqip2.get_asdebs());
 
                     let improvement = current_aqi - lastyear_aqi;
