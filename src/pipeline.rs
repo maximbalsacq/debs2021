@@ -5,11 +5,8 @@ use crate::spliter::*;
 use crate::CityId;
 use crate::gen::challenger::{Batch,Measurement};
 
-pub fn get_final_aggregate<'a>(active_cities: &ActiveCities, mut preaggregated: impl Iterator<Item = &'a CityParticleMap>) -> CityParticleMap {
-    let mut result = match preaggregated.next() {
-        Some(m) => m.clone(), // use the first value and add to it
-        None => return CityParticleMap::default() // don't have any values
-    };
+pub fn get_final_aggregate<'a>(active_cities: &ActiveCities, preaggregated: impl Iterator<Item = &'a CityParticleMap>) -> CityParticleMap {
+    let mut result = CityParticleMap::default();
     preaggregated
         .flatten()
         .filter(|(cityid, _)| active_cities.is_active(**cityid))
