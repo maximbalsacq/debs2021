@@ -19,8 +19,12 @@ pub fn get_final_aggregate<'a>(active_cities: &ActiveCities, preaggregated: impl
     result
 }
 
-pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<Item=Batch>) {
+pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<Item=Batch> + Send) {
     let localize = |meas : Measurement, batch_seq_id: i64| {
+        if meas.latitude < 47.40724 || meas.latitude > 54.9079 || meas.longitude < 5.98815 || meas.longitude > 14.98853 {
+            // outside germany, don't bother searching
+            return None;
+        }
         let location = locations.localize(meas.latitude, meas.longitude).next()?;
         Some(LocalizedMeasurement {
             batch_seq_id,
