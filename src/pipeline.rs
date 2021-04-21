@@ -122,6 +122,7 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                 .map(|(position, city)| {
 
                     // Calculate the aggregate for the lasy day (only for the top 50)
+                    assert!(active_cities.is_active(city.cityid));
                     let lastday_aggregate = last_day_aqi
                         .get(&city.cityid)
                         .expect("Know city is contained in last 10 min");
