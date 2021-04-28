@@ -149,7 +149,7 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
             }
         });
 
-    for _res in resiter.take(100) {
+    for _res in resiter {
         // dbg!(res.topkimproved);
     }
     use std::sync::atomic::Ordering;
