@@ -23,12 +23,14 @@ use std::sync::atomic::AtomicUsize;
 pub struct AnalysisLocations {
     bboxtree: RTree<RTreeLocation>,
     locations: Vec<(AnalysisLocation, MultiPolygon<f64>)>,
-    cache: Vec<LocationCache>,
+    insidecache: Vec<LocationCache>,
+    outsidecache: Vec<LocationCache>,
     /// a map from CityId to city name, where CityId is simply an index
     /// into the array
     known_cities: Vec<String>,
     pub cachehits: AtomicUsize,
     pub cachemisses: AtomicUsize,
+    pub outsidecachehits: AtomicUsize,
 }
 
 use rstar::{AABB,RTree,RTreeObject,Point,PointDistance};
@@ -111,7 +113,7 @@ impl PointDistance for LocationCacheItem {
 
 use std::sync::RwLock;
 
-const CACHE_SIZE: usize = 64;
+const CACHE_SIZE: usize = 32;
 
 use arrayvec::ArrayVec;
 use rstar::primitives::Line;
@@ -199,6 +201,9 @@ impl AnalysisLocations {
         let cache : Vec<LocationCache> = locations.locations.iter()
             .map(|location| LocationCache::new(location))
             .collect();
+        let outsidecache : Vec<LocationCache> = locations.locations.iter()
+            .map(|location| LocationCache::new(location))
+            .collect();
         let locations : Vec<(AnalysisLocation, MultiPolygon<f64>)> = locations.locations.into_iter()
             .map(|location| {
                 let multipoly = geo::MultiPolygon::from_iter(
@@ -250,9 +255,11 @@ impl AnalysisLocations {
             bboxtree,
             locations,
             known_cities,
-            cache,
+            insidecache: cache,
+            outsidecache: outsidecache,
             cachehits: AtomicUsize::from(0),
             cachemisses: AtomicUsize::from(0),
+            outsidecachehits: AtomicUsize::from(0),
         }
     }
 
@@ -270,7 +277,15 @@ impl AnalysisLocations {
                     None
                 }
                 */
-                if self.cache[treeobject.idx as usize].contains(latitude, longitude) {
+                if self.outsidecache[treeobject.idx as usize].contains(latitude, longitude) {
+                    debug_assert!({
+                        let (_, bounding_poly) = &self.locations[treeobject.idx as usize];
+                        let p = point!(x: f64::from(longitude), y: f64::from(latitude));
+                        !bounding_poly.contains(&p)
+                    });
+                    self.outsidecachehits.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                    None
+                } else if self.insidecache[treeobject.idx as usize].contains(latitude, longitude) {
                     debug_assert!({
                         let (_, bounding_poly) = &self.locations[treeobject.idx as usize];
                         let p = point!(x: f64::from(longitude), y: f64::from(latitude));
@@ -281,11 +296,12 @@ impl AnalysisLocations {
                 } else {
                     let (location, bounding_poly) = &self.locations[treeobject.idx as usize];
                     let p = point!(x: f64::from(longitude), y: f64::from(latitude));
+                    self.cachemisses.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
                     if bounding_poly.contains(&p) {
-                        self.cache[treeobject.idx as usize].add(latitude, longitude);
-                        self.cachemisses.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                        self.insidecache[treeobject.idx as usize].add(latitude, longitude);
                         Some(location)
                     } else {
+                        self.outsidecache[treeobject.idx as usize].add(latitude, longitude);
                         None
                     }
                 }

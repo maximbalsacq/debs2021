@@ -153,5 +153,5 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
         // dbg!(res.topkimproved);
     }
     use std::sync::atomic::Ordering;
-    println!("Cache hits/misses: {}/{}", locations.cachehits.load(Ordering::SeqCst), locations.cachemisses.load(Ordering::SeqCst));
+    println!("Cache hits/misses/outside: {}/{}/{}", locations.cachehits.load(Ordering::SeqCst), locations.cachemisses.load(Ordering::SeqCst), locations.outsidecachehits.load(Ordering::SeqCst));
 }
