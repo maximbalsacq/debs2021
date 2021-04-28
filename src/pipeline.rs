@@ -5,18 +5,32 @@ use crate::spliter::*;
 use crate::CityId;
 use crate::gen::challenger::{Batch,Measurement};
 
-pub fn get_final_aggregate<'a>(active_cities: &ActiveCities, preaggregated: impl Iterator<Item = &'a CityParticleMap>) -> CityParticleMap {
-    let mut result = CityParticleMap::default();
+use rayon::prelude::*;
+pub fn get_final_aggregate<'a>(active_cities: &ActiveCities, preaggregated: impl ParallelIterator<Item = &'a CityParticleMap>) -> CityParticleMap {
     preaggregated
         .flatten()
         .filter(|(cityid, _)| active_cities.is_active(**cityid))
-        .for_each(|(cityid, preaggregate)| {
+        .fold_with(
+            CityParticleMap::default(),
+            |mut result, (cityid, preaggregate)| {
             match result.get_mut(cityid) {
                 Some(x) => *x += *preaggregate,
                 None => assert!(result.insert(*cityid, *preaggregate).is_none()),
             };
-        });
-    result
+            result
+        })
+        .reduce(
+            || CityParticleMap::default(),
+            |mut a, b| {
+                for (k, v2) in b {
+                    match a.get_mut(&k) {
+                        Some(v) => *v += v2,
+                        None => assert!(a.insert(k, v2).is_none()),
+                    }
+                }
+                a
+            }
+        )
 }
 
 pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<Item=Batch> + Send) {
@@ -76,7 +90,7 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                 .clone() // only clones the iterator, not the underlying values
                 .rev()
                 .take(2) // get last 2 batches of 5 minutes = 10 minute window
-                .flat_map(|city_aggregate_map : &CityParticleMap| city_aggregate_map.keys())
+                .flat_map(|city_aggregate_map : &CityParticleMap| city_aggregate_map.into_par_iter().map(|(k,_v)| k))
                 .cloned() // clone city ids. since this is a u32, it should be a simple copy
                 .collect::<ActiveCities>();
             
@@ -92,7 +106,7 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
             let lastyear_aggregates = get_final_aggregate(&active_cities, window.lastyear);
 
             let mut improvements = current_aggregates
-                .into_iter()
+                .into_par_iter()
                 .filter_map(|(cityid, aggregate)| {
                     // Get this year's 5 day AQI
                     let current_aqip1 = AQIValue::from_pm10(aggregate.p1())?;//.expect("Average current p1 invalid");

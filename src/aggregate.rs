@@ -131,9 +131,10 @@ pub trait Partition5Min: Iterator<Item = LocalizedMeasurement> {
 impl<T: Sized> Partition5Min for T where T: Iterator<Item = LocalizedMeasurement> {}
 
 use std::collections::VecDeque;
-pub type AnalysisWindowIter<'a, T> = std::collections::vec_deque::Iter<'a, T>;
+use rayon::prelude::*;
+pub type AnalysisWindowIter<'a, T> = rayon::collections::vec_deque::Iter<'a, T>;
 
-pub struct AnalysisWindow<'lcur, 'llast, TCur, TLast> {
+pub struct AnalysisWindow<'lcur, 'llast, TCur: Sync, TLast: Sync> {
     pub current: AnalysisWindowIter<'lcur, TCur>,
     pub lastyear: AnalysisWindowIter<'llast, TLast>,
 }
@@ -143,6 +144,8 @@ where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
     F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
+    TCur: Sync,
+    TLast: Sync,
 {
     current_iter: ICur,
     current_queue: VecDeque<TCur>,
@@ -160,6 +163,8 @@ where
     ILast: Iterator<Item = TLast>,
     TOut: 'static,
     F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
+    TCur: Sync,
+    TLast: Sync,
 {
 
     pub fn new(mut current_iter: ICur, mut lastyear_iter: ILast, current_window_size: usize, lastyear_window_size: usize, map_func: F) -> Self {
@@ -208,6 +213,8 @@ where
     ILast: Iterator<Item = TLast>,
     TOut: 'static,
     F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
+    TCur: Sync,
+    TLast: Sync,
 {
     type Item=TOut;
 
@@ -217,8 +224,8 @@ where
         }
 
         let window = AnalysisWindow {
-            current: self.current_queue.iter(),
-            lastyear: self.lastyear_queue.iter(),
+            current: self.current_queue.par_iter(),
+            lastyear: self.lastyear_queue.par_iter(),
         };
         let res = Some((self.map_func)(window));
 
@@ -244,6 +251,8 @@ impl<ICur, TCur, ILast, TLast> IterPair<ICur, ILast>
 where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
+    TCur: Sync,
+    TLast: Sync,
     {
     pub fn with_analysis_windows<F, TOut>(self, current_window_size: usize, lastyear_window_size: usize, map_func: F) -> AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut>
     where
@@ -433,6 +442,16 @@ impl std::iter::FromIterator<CityId> for ActiveCities {
     fn from_iter<T: IntoIterator<Item = CityId>>(iter: T) -> Self {
         Self {
             inner: std::iter::FromIterator::from_iter(iter)
+        }
+    }
+}
+
+impl rayon::iter::FromParallelIterator<CityId> for ActiveCities {
+    fn from_par_iter<I>(par_iter: I) -> Self
+    where
+        I: IntoParallelIterator<Item = CityId> {
+        Self {
+            inner: rayon::iter::FromParallelIterator::from_par_iter(par_iter)
         }
     }
 }
