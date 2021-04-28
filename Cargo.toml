@@ -22,6 +22,10 @@ rayon = "1.5.0"
 [build-dependencies]
 tonic-build = "0.4.1"
 
+[profile.dev]
+opt-level = 3
+debug-assertions = true
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
