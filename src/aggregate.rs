@@ -131,19 +131,18 @@ pub trait Partition5Min: Iterator<Item = LocalizedMeasurement> {
 impl<T: Sized> Partition5Min for T where T: Iterator<Item = LocalizedMeasurement> {}
 
 use std::collections::VecDeque;
-use rayon::prelude::*;
-pub type AnalysisWindowIter<'a, T> = rayon::collections::vec_deque::Iter<'a, T>;
+pub type AnalysisWindowIter<'a, T> = std::collections::vec_deque::Iter<'a, T>;
 
 pub struct AnalysisWindow<'lcur, 'llast, TCur: Sync, TLast: Sync> {
     pub current: AnalysisWindowIter<'lcur, TCur>,
     pub lastyear: AnalysisWindowIter<'llast, TLast>,
 }
 
-pub struct AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut>
+pub struct AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut, TCache=()>
 where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
-    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
+    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>, Option<TCache>) -> (TOut, TCache),
     TCur: Sync,
     TLast: Sync,
 {
@@ -153,16 +152,18 @@ where
     lastyear_iter: ILast,
     lastyear_queue: VecDeque<TLast>,
 
+    cache: Option<TCache>,
+
     map_func: F,
     completed: bool,
 }
 
-impl<ICur, TCur, ILast, TLast, F, TOut> AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut>
+impl<ICur, TCur, ILast, TLast, F, TOut, TCache> AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut, TCache>
 where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
     TOut: 'static,
-    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
+    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>, Option<TCache>) -> (TOut, TCache),
     TCur: Sync,
     TLast: Sync,
 {
@@ -201,18 +202,19 @@ where
             lastyear_iter,
             lastyear_queue,
             map_func,
-            completed
+            completed,
+            cache: None,
         }
     }
 }
 
 
-impl<ICur, TCur, ILast, TLast, F, TOut> Iterator for AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut>
+impl<ICur, TCur, ILast, TLast, F, TOut, TCache> Iterator for AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut, TCache>
 where
     ICur: Iterator<Item = TCur>,
     ILast: Iterator<Item = TLast>,
     TOut: 'static,
-    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut,
+    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>, Option<TCache>) -> (TOut, TCache),
     TCur: Sync,
     TLast: Sync,
 {
@@ -224,10 +226,11 @@ where
         }
 
         let window = AnalysisWindow {
-            current: self.current_queue.par_iter(),
-            lastyear: self.lastyear_queue.par_iter(),
+            current: self.current_queue.iter(),
+            lastyear: self.lastyear_queue.iter(),
         };
-        let res = Some((self.map_func)(window));
+        let (res, cache) = (self.map_func)(window, self.cache.take());
+        self.cache = Some(cache); // update cache
 
         match (self.current_iter.next(), self.lastyear_iter.next()) {
             (Some(current), Some(lastyear)) => {
@@ -241,7 +244,7 @@ where
         self.current_queue.pop_front();
         self.lastyear_queue.pop_front();
 
-        res
+        Some(res)
     }
 }
 
@@ -254,10 +257,10 @@ where
     TCur: Sync,
     TLast: Sync,
     {
-    pub fn with_analysis_windows<F, TOut>(self, current_window_size: usize, lastyear_window_size: usize, map_func: F) -> AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut>
+    pub fn with_analysis_windows<F, TOut, TCache>(self, current_window_size: usize, lastyear_window_size: usize, map_func: F) -> AnalysisWindowsMap<ICur, TCur, ILast, TLast, F, TOut, TCache>
     where
     TOut: 'static,
-    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>) -> TOut {
+    F: for<'a> Fn(AnalysisWindow<'a, 'a, TCur, TLast>, Option<TCache>) -> (TOut, TCache) {
         AnalysisWindowsMap::new(self.0, self.1, current_window_size, lastyear_window_size, map_func)
     }
 }
@@ -270,11 +273,11 @@ mod window_test {
     #[test]
     fn join_test() {
         let x = IterPair(1..5, 2..6)
-            .with_analysis_windows(2, 2, |window| {
+            .with_analysis_windows(2, 2, |window, _cache: Option<()>| {
                 let current_total : i32 = window.current.sum();
                 let lastyear_total : i32 = window.lastyear.sum();
                 assert_eq!(current_total+2, lastyear_total);
-                current_total + lastyear_total
+                (current_total + lastyear_total, ())
             })
             .collect::<Vec<i32>>();
         assert_eq!(x, vec![
@@ -289,11 +292,11 @@ mod window_test {
         let x = (1..5)
             .map(|x| (x, x+1))
             .spliter()
-            .with_analysis_windows(2, 2, |window| {
+            .with_analysis_windows(2, 2, |window, _cache: Option<()>| {
                 let current_total : i32 = window.current.sum();
                 let lastyear_total : i32 = window.lastyear.sum();
                 assert_eq!(current_total+2, lastyear_total);
-                current_total + lastyear_total
+                (current_total + lastyear_total, ())
             })
             .collect::<Vec<i32>>();
         assert_eq!(x, vec![
@@ -308,10 +311,10 @@ mod window_test {
         let x = (1..5)
             .map(|x| (x, x+1))
             .spliter()
-            .with_analysis_windows(1, 3, |window| {
+            .with_analysis_windows(1, 3, |window, _cache: Option<()>| {
                 let current_total : i32 = window.current.sum();
                 let lastyear_total : i32 = window.lastyear.sum();
-                current_total + lastyear_total
+                (current_total + lastyear_total, ())
             })
             .collect::<Vec<i32>>();
         assert_eq!(x, vec![
@@ -322,34 +325,36 @@ mod window_test {
 }
 
 
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug,Default,Copy,Clone)]
 pub struct ParticleAggregate {
-    sum_p1: f32,
-    sum_p2: f32,
+    sum_p1: f64,
+    sum_p2: f64,
     denom: usize,
 }
 
 impl ParticleAggregate {
     pub fn new(init: (f32, f32)) -> Self {
+        debug_assert!(init.0 >= 0.0 && init.1 >= 0.0);
         Self {
-            sum_p1: init.0,
-            sum_p2: init.1,
+            sum_p1: init.0 as f64,
+            sum_p2: init.1 as f64,
             denom: 1,
         }
     }
 
     pub fn add(&mut self, val: (f32, f32)) {
-        self.sum_p1 += val.0;
-        self.sum_p2 += val.1;
+        debug_assert!(val.0 >= 0.0 && val.1 >= 0.0);
+        self.sum_p1 += val.0 as f64;
+        self.sum_p2 += val.1 as f64;
         self.denom += 1;
     }
 
     pub fn p1(&self) -> f32 {
-        self.sum_p1 / (self.denom as f32)
+        (self.sum_p1 / (self.denom as f64)) as f32
     }
 
     pub fn p2(&self) -> f32 {
-        self.sum_p2 / (self.denom as f32)
+        (self.sum_p2 / (self.denom as f64)) as f32
     }
 }
 
@@ -374,6 +379,49 @@ impl std::ops::AddAssign for ParticleAggregate {
     }
 }
 
+impl std::ops::Sub for ParticleAggregate {
+    type Output=Self;
+    fn sub(self, rhs: ParticleAggregate) -> Self {
+        debug_assert!(self.denom >= rhs.denom, "Removing {} units from aggregate with only {} added (self: {:#?}, rhs: {:#?})", rhs.denom, self.denom, self, rhs);
+        let new_denom = self.denom - rhs.denom;
+        if new_denom == 0 {
+            // when no values are left, use all-zeroes instead
+            // off subtracting to avoid/reduce rounding errors
+            Self::default()   
+        } else {
+            debug_assert!((self.sum_p1 - rhs.sum_p1) >= -f64::EPSILON, "Removing {} p1 from aggregate with only {} p1 added (self: {:#?}, rhs: {:#?})", rhs.sum_p1, self.sum_p1, self, rhs);
+            debug_assert!((self.sum_p2 - rhs.sum_p2) >= -f64::EPSILON, "Removing {} p2 from aggregate with only {} p2 added (self: {:#?}, rhs: {:#?})", rhs.sum_p2, self.sum_p2, self, rhs);
+            Self {
+                sum_p1: self.sum_p1 - rhs.sum_p1,
+                sum_p2: self.sum_p2 - rhs.sum_p2,
+                denom: new_denom,
+            }
+        }
+    }
+}
+
+impl std::ops::SubAssign for ParticleAggregate {
+    fn sub_assign(&mut self, rhs: ParticleAggregate) {
+        debug_assert!(self.denom >= rhs.denom, "Removing {} units from aggregate with only {} added (self: {:#?}, rhs: {:#?})", rhs.denom, self.denom, self, rhs);
+        *self = {
+            let new_denom = self.denom - rhs.denom;
+            if new_denom == 0 {
+                // when no values are left, use all-zeroes instead
+                // off subtracting to avoid/reduce rounding errors
+                Self::default()   
+            } else {
+                debug_assert!((self.sum_p1 - rhs.sum_p1) >= -f64::EPSILON, "Removing {} p1 from aggregate with only {} p1 added (self: {:#?}, rhs: {:#?})", rhs.sum_p1, self.sum_p1, self, rhs);
+                debug_assert!((self.sum_p2 - rhs.sum_p2) >= -f64::EPSILON, "Removing {} p2 from aggregate with only {} p2 added (self: {:#?}, rhs: {:#?})", rhs.sum_p2, self.sum_p2, self, rhs);
+                Self {
+                    sum_p1: self.sum_p1 - rhs.sum_p1,
+                    sum_p2: self.sum_p2 - rhs.sum_p2,
+                    denom: new_denom,
+                }
+            }
+        }
+    }
+}
+
 impl std::iter::FromIterator<ParticleAggregate> for ParticleAggregate {
     fn from_iter<T: IntoIterator<Item = ParticleAggregate>>(iter: T) -> Self {
         let (sum_p1, sum_p2, denom) = iter
@@ -389,7 +437,7 @@ impl std::iter::FromIterator<(f32, f32)> for ParticleAggregate {
     fn from_iter<T: IntoIterator<Item = (f32, f32)>>(iter: T) -> Self {
         let (sum_p1, sum_p2, denom) = iter
             .into_iter()
-            .fold((0.0, 0.0, 0), |acc, (p1, p2)| (acc.0 + p1, acc.1 + p2, acc.2 + 1));
+            .fold((0.0, 0.0, 0), |acc, (p1, p2)| (acc.0 + p1 as f64, acc.1 + p2 as f64, acc.2 + 1));
         Self {
             sum_p1, sum_p2, denom
         }
@@ -446,16 +494,6 @@ impl std::iter::FromIterator<CityId> for ActiveCities {
     }
 }
 
-impl rayon::iter::FromParallelIterator<CityId> for ActiveCities {
-    fn from_par_iter<I>(par_iter: I) -> Self
-    where
-        I: IntoParallelIterator<Item = CityId> {
-        Self {
-            inner: rayon::iter::FromParallelIterator::from_par_iter(par_iter)
-        }
-    }
-}
-
 impl std::ops::BitOr for ActiveCities {
     type Output=ActiveCities;
 
@@ -467,6 +505,26 @@ impl std::ops::BitOr for ActiveCities {
 
 pub type CityParticleMap = std::collections::HashMap<CityId, ParticleAggregate>;
 // type CityParticleMap = std::collections::BTreeMap<CityId, ParticleAggregate>;
+
+/// Calculates a[k] += b[k] for every key k in b
+pub(crate) fn map_add(a: &mut CityParticleMap, b: &CityParticleMap) {
+    for (k, v2) in b {
+        match a.get_mut(&k) {
+            Some(v) => *v += *v2,
+            None => assert!(a.insert(*k, *v2).is_none()),
+        }
+    }
+}
+
+/// Calculates a[k] -= b[k] for every key k in b
+pub(crate) fn map_sub(a: &mut CityParticleMap, b: &CityParticleMap) {
+    for (k, v2) in b {
+        match a.get_mut(k) {
+            Some(v) => *v -= *v2,
+            None => panic!("Removing city w/ cityid {} without having added it previously", *k),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct PreAggregate<I>

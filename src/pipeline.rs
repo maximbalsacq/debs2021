@@ -5,12 +5,10 @@ use crate::spliter::*;
 use crate::CityId;
 use crate::gen::challenger::{Batch,Measurement};
 
-use rayon::prelude::*;
-pub fn get_final_aggregate<'a>(active_cities: &ActiveCities, preaggregated: impl ParallelIterator<Item = &'a CityParticleMap>) -> CityParticleMap {
+pub fn get_final_aggregate<'a>(preaggregated: impl Iterator<Item = &'a CityParticleMap>) -> CityParticleMap {
     preaggregated
         .flatten()
-        .filter(|(cityid, _)| active_cities.is_active(**cityid))
-        .fold_with(
+        .fold(
             CityParticleMap::default(),
             |mut result, (cityid, preaggregate)| {
             match result.get_mut(cityid) {
@@ -19,18 +17,6 @@ pub fn get_final_aggregate<'a>(active_cities: &ActiveCities, preaggregated: impl
             };
             result
         })
-        .reduce(
-            || CityParticleMap::default(),
-            |mut a, b| {
-                for (k, v2) in b {
-                    match a.get_mut(&k) {
-                        Some(v) => *v += v2,
-                        None => assert!(a.insert(k, v2).is_none()),
-                    }
-                }
-                a
-            }
-        )
 }
 
 pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<Item=Batch> + Send) {
@@ -55,11 +41,13 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
 
         let current_iter = batch.current
             .into_par_iter()
+            .filter(|m| m.p1 >= 0.0 && m.p2 >= 0.0)
             .filter_map(move |m| localize(m, batch_seq_id))
             .collect::<Vec<_>>()
             .into_iter();
         let lastyear_iter = batch.lastyear
             .into_par_iter()
+            .filter(|m| m.p1 >= 0.0 && m.p2 >= 0.0)
             .filter_map(move |m| localize(m, batch_seq_id))
             .collect::<Vec<_>>()
             .into_iter();
@@ -84,29 +72,85 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
         improvement: i32,
         cityid: CityId,
     }
+    struct SlidingWindowContents {
+        current_1d_aggregates: CityParticleMap,
+        current_5d_aggregates: CityParticleMap,
+        lastyear_5d_aggregates: CityParticleMap,
+    }
     let resiter = IterPair(current_iter, lastyear_iter)
-        .with_analysis_windows(5*24*(60/5), 5*24*(60/5), |window| {
+        .with_analysis_windows(5*24*(60/5), 5*24*(60/5), |window, cache: Option<SlidingWindowContents>| {
+            debug_assert_eq!(window.current.len(), 5*24*(60/5));
+            debug_assert_eq!(window.lastyear.len(), 5*24*(60/5));
             let active_cities = window.current
                 .clone() // only clones the iterator, not the underlying values
                 .rev()
                 .take(2) // get last 2 batches of 5 minutes = 10 minute window
-                .flat_map(|city_aggregate_map : &CityParticleMap| city_aggregate_map.into_par_iter().map(|(k,_v)| k))
+                .flat_map(|city_aggregate_map : &CityParticleMap| city_aggregate_map.into_iter().map(|(k,_v)| k))
                 .cloned() // clone city ids. since this is a u32, it should be a simple copy
                 .collect::<ActiveCities>();
+            /* {
+                let current_samples = window.current.clone().map(|x| x.len()).sum::<usize>();
+                let lastyear_samples = window.lastyear.clone().map(|x| x.len()).sum::<usize>();
+                println!("window has {} current/{} lastyear samples ({} total)", current_samples, lastyear_samples, current_samples + lastyear_samples);
+            } */
             
-            let last_day_aqi = {
-                let last_day_windows = window.current
-                    .clone()
-                    .rev()
-                    .take(24*(60/5)); // take values from last day
-                get_final_aggregate(&active_cities, last_day_windows)
+            let (last_day_aqi, current_aggregates, lastyear_aggregates, cache) = {
+                let (current_1d_aggregates, current_5d_aggregates, lastyear_5d_aggregates) = if let Some(SlidingWindowContents { current_1d_aggregates, current_5d_aggregates, lastyear_5d_aggregates }) = cache {
+                    // cache exists add values from cache to newest value
+                    // to obtain the value for this window
+                    let newest : &CityParticleMap = window.current.clone().last().unwrap();
+                    let newest_lastyear : &CityParticleMap = window.lastyear.clone().last().unwrap();
+                    let mut new_current_1d_aggregates = newest.clone();
+                    let mut new_current_5d_aggregates = newest.clone();
+                    let mut new_lastyear_5d_aggregates = newest_lastyear.clone();
+                    map_add(&mut new_current_1d_aggregates, &current_1d_aggregates);
+                    map_add(&mut new_current_5d_aggregates, &current_5d_aggregates);
+                    map_add(&mut new_lastyear_5d_aggregates, &lastyear_5d_aggregates);
+                    (new_current_1d_aggregates, new_current_5d_aggregates, new_lastyear_5d_aggregates) 
+                } else {
+                    // generate the aggreagate from scrath using the 5 day window
+                    let last_day_windows = window.current
+                        .clone()
+                        .rev()
+                        .take(24*(60/5)); // take values from last day
+                    let current_1d_aggregates = get_final_aggregate(last_day_windows);
+                    let current_aggregates = get_final_aggregate(window.current.clone());
+                    let lastyear_aggregates = get_final_aggregate(window.lastyear.clone());
+                    (current_1d_aggregates, current_aggregates, lastyear_aggregates)
+                };
+
+                // create the cache by removing dropping the now obsolete last element from each window
+                // to be examined
+                // remove the first CityParticleMap from one day ago
+                let oldest_current_1d = window.current.clone().rev().nth(24*(60/5)-1).unwrap();
+                let mut current_1d_aggregates_tocache = current_1d_aggregates.clone();
+                map_sub(&mut current_1d_aggregates_tocache, oldest_current_1d);
+
+
+                // remove the first CityParticleMap from 5 days ago
+                // since the window is exactly 5 days big, this should be the first item
+                let oldest_current_5d = window.current.clone().next().unwrap();
+                let mut current_5d_aggregates_tocache = current_5d_aggregates.clone();
+                map_sub(&mut current_5d_aggregates_tocache, oldest_current_5d);
+
+                // remove the first CityParticleMap from 1 year 5 days ago
+                // since the window is exactly 5 days big, this should be the first item
+                let oldest_lastyear_5d = window.lastyear.clone().next().unwrap();
+                let mut lastyear_5d_aggregates_tocache = lastyear_5d_aggregates.clone();
+                map_sub(&mut lastyear_5d_aggregates_tocache, oldest_lastyear_5d);
+
+                let newcache = SlidingWindowContents {
+                    current_1d_aggregates: current_1d_aggregates_tocache,
+                    current_5d_aggregates: current_5d_aggregates_tocache,
+                    lastyear_5d_aggregates: lastyear_5d_aggregates_tocache,
+                };
+                (current_1d_aggregates, current_5d_aggregates, lastyear_5d_aggregates, newcache)
             };
 
-            let current_aggregates = get_final_aggregate(&active_cities, window.current);
-            let lastyear_aggregates = get_final_aggregate(&active_cities, window.lastyear);
 
             let mut improvements = current_aggregates
                 .into_par_iter()
+                .filter(|(cityid, _)| active_cities.is_active(*cityid))
                 .filter_map(|(cityid, aggregate)| {
                     // Get this year's 5 day AQI
                     let current_aqip1 = AQIValue::from_pm10(aggregate.p1())?;//.expect("Average current p1 invalid");
@@ -140,27 +184,53 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                     let lastday_aggregate = last_day_aqi
                         .get(&city.cityid)
                         .expect("Know city is contained in last 10 min");
-                    let current_aqip1 = AQIValue::from_pm10(lastday_aggregate.p1())
-                        .expect("Average last 24h p1 invalid")
-                        .get_asdebs();
+                    let current_aqip1 = AQIValue::from_pm10(lastday_aggregate.p1());
+                    #[cfg(debug_assertions)]
+                    if current_aqip1.is_none() {
+                        println!(
+                            "24h p1 for city {} (cityid {}) outside scale",
+                            locations.lookup(city.cityid).to_owned(),
+                            city.cityid
+                        );
+                        let last24h_iter = window
+                            .current
+                            .clone()
+                            .rev()
+                            .take(24*(60/5) - 1)
+                            .filter_map(|city_aggregate_map| city_aggregate_map.get(&city.cityid));
+                        let last24h_values = last24h_iter
+                            .clone()
+                            .copied()
+                            .collect::<Vec<ParticleAggregate>>();
+                        let last24h_actual = last24h_iter.copied().collect::<ParticleAggregate>();
+                        println!(
+                            " Cached 24h p1: {:?}, actual: {:?}, values:\n{:?}",
+                            cache.current_1d_aggregates.get(&city.cityid),
+                            last24h_actual,
+                            last24h_values);
+                    }
+                    let current_aqip1 = current_aqip1
+                        .map(|v| v.get_asdebs())
+                        .unwrap_or(i32::MAX); // FIXME: Handle Average last 24h p1 outside scale
                     let current_aqip2 = AQIValue::from_pm25(lastday_aggregate.p2())
-                        .expect("Average last 24h p2 invalid")
-                        .get_asdebs();
+                        .map(|v| v.get_asdebs())
+                        .unwrap_or(i32::MAX); // FIXME: Handle Average last 24h p2 outside scale
 
                     crate::gen::challenger::TopKCities {
                         position: position as i32,
                         city: locations.lookup(city.cityid).to_owned(),
                         current_aqip1,
                         current_aqip2,
-                        average_aqi_improvement: city.improvement,
+                        average_aqi_improvement: -city.improvement,
                     }
                 })
                 .collect::<Vec<_>>();
-            crate::gen::challenger::ResultQ1 {
+            let res = crate::gen::challenger::ResultQ1 {
                 benchmark_id: 0,
                 batch_seq_id: 0,
                 topkimproved: result,
-            }
+            };
+            (res, cache)
         });
 
     for _res in resiter {
