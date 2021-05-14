@@ -11,13 +11,13 @@ visit the [rustup](https://rustup.rs/) website and follow the installation instr
 
 ## Setup and Configuration
 Download the data from [the shared folder](https://bwsyncandshare.kit.edu/s/caadGD4AKiHbCPR)
-and save it into the same folder. The total dataset consists of about 32 GiB of data.
-The folder will be considered the root folder of the data. 
+and save it into a folder. This folder will be considered the root folder of the data. 
+The total dataset consists of about 32 GiB of data.
 
 For some binaries, notably the q1 binary, `DEBS_DATA_ROOT` needs to be set
 to this directory before executing the binary:
 ```sh
-export DEBS_DATA_ROOT="/path/to/extracted/data"
+export DEBS_DATA_ROOT="/path/to/downloaded/data"
 ```
 
 The data was split into smaller chunks to avoid having a multi-gigabyte file
@@ -27,7 +27,7 @@ To extract the messages, join the parts with:
 cat messages.x* > messages.tar.gz
 ```
 
-Then extract it using:
+Then extract the messages using:
 ```sh
 tar xf messages.tar.gz
 ```
@@ -74,7 +74,7 @@ somewhere is still on the todo list.
 These binaries are not necessary to solve the query,
 but have been developed in the scope of this project.
 
-#### download
+#### `download`
 The download binary was used to download the given dataset
 from the DEBS servers. As the DEBS servers are offline,
 this program is now only useful as a reference for how
@@ -93,7 +93,7 @@ to test the functionality and performance of
 the location process. Require `DEBS_DATA_ROOT`
 to be set correctly.
 
-#### geo2sql/batch2ql
+#### `geo2sql`/`batch2ql`
 geo2sql and batch2sql convert location info and
 batch data to SQL, respectively.
 The generated SQL files use the schema created by the following
