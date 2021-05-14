@@ -1,4 +1,3 @@
-#![feature(or_patterns)]
 pub mod gen;
 pub mod io;
 pub mod aqi;

@@ -69,6 +69,8 @@ pub async fn main() {
                     // interior ring (unused)
                     vec![]
             );
+            // the specified alternative does not exist
+            #[allow(deprecated)]
             usize::from(p.is_convex())
         })
         .sum();
