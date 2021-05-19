@@ -5,7 +5,9 @@ use crate::spliter::*;
 use crate::CityId;
 use crate::gen::challenger::{Batch,Measurement};
 
-pub fn get_final_aggregate<'a>(preaggregated: impl Iterator<Item = &'a CityParticleMap>) -> CityParticleMap {
+/// Aggregates multiple preaggregated values for every city
+// FIXME: This could probably simplified/reduced to preaggregated.fold(map_add())
+fn get_final_aggregate<'a>(preaggregated: impl Iterator<Item = &'a CityParticleMap>) -> CityParticleMap {
     preaggregated
         .flatten()
         .fold(
@@ -19,6 +21,110 @@ pub fn get_final_aggregate<'a>(preaggregated: impl Iterator<Item = &'a CityParti
         })
 }
 
+/// Describes the AQI improvement of a city
+struct TopKCity {
+    /// Improvement (diffference between current/lastyear AQI in debs format)
+    improvement: i32,
+    /// The city's id
+    cityid: CityId,
+}
+
+/// Calculates the improvements for each active city and
+/// generates a Vec<TopKCity> sorted by improvement.
+fn calc_improvements(active_cities: &ActiveCities, current_aggregates: CityParticleMap, lastyear_aggregates: CityParticleMap) -> Vec<TopKCity> {
+    use rayon::prelude::*;
+    let mut improvements = current_aggregates
+        .into_par_iter()
+        .filter(|(cityid, _)| active_cities.is_active(*cityid))
+        .filter_map(|(cityid, aggregate)| {
+            // Get this year's 5 day AQI
+            let current_aqip1 = AQIValue::from_pm10(aggregate.p1())?;//.expect("Average current p1 invalid");
+            let current_aqip2 = AQIValue::from_pm25(aggregate.p2())?;//.expect("Average current p2 invalid");
+            let current_aqi = current_aqip1.get_asdebs().max(current_aqip2.get_asdebs());
+
+            // Get last year's 5 day AQI
+            // If no sensor data was available in given city for lastyear window period,
+            // calculation of improvement is impossible. Skip those cases.
+            let lastyear_aggregate = lastyear_aggregates.get(&cityid)?;
+            let lastyear_aqip1 = AQIValue::from_pm10(lastyear_aggregate.p1())?;//.expect("Average lastyear p1 invalid");
+            let lastyear_aqip2 = AQIValue::from_pm25(lastyear_aggregate.p2())?;//.expect("Average lastyear p2 invalid");
+            let lastyear_aqi = lastyear_aqip1.get_asdebs().max(lastyear_aqip2.get_asdebs());
+
+            let improvement = current_aqi - lastyear_aqi;
+
+            Some(TopKCity {
+                improvement,
+                cityid
+            })
+        })
+        .collect::<Vec<TopKCity>>();
+    improvements.sort_by_key(|x| x.improvement);
+    improvements
+}
+
+/// Uses the list of improvements to generate the final result containing
+/// position, city name, the improvement and current air quality.
+fn get_top_cities(improvements: Vec<TopKCity>, active_cities: &ActiveCities, last_day_aqi: &CityParticleMap, locations: &AnalysisLocations) -> crate::gen::challenger::ResultQ1 {
+    let result = improvements.into_iter()
+        .take(50) // top 50
+        .enumerate()
+        .map(|(position, city)| {
+
+            // Calculate the aggregate for the lasy day (only for the top 50)
+            assert!(active_cities.is_active(city.cityid));
+            let lastday_aggregate = last_day_aqi
+                .get(&city.cityid)
+                .expect("Know city is contained in last 10 min");
+            let current_aqip1 = AQIValue::from_pm10(lastday_aggregate.p1());
+            /* #[cfg(debug_assertions)]
+               if current_aqip1.is_none() {
+               println!(
+               "24h p1 for city {} (cityid {}) outside scale",
+               locations.lookup(city.cityid).to_owned(),
+               city.cityid
+               );
+               let last24h_iter = window
+               .current
+               .clone()
+               .rev()
+               .take(24*(60/5) - 1)
+               .filter_map(|city_aggregate_map| city_aggregate_map.get(&city.cityid));
+               let last24h_values = last24h_iter
+               .clone()
+               .copied()
+               .collect::<Vec<ParticleAggregate>>();
+               let last24h_actual = last24h_iter.copied().collect::<ParticleAggregate>();
+               println!(
+               " Cached 24h p1: {:?}, actual: {:?}, values:\n{:?}",
+               cache.current_1d_aggregates.get(&city.cityid),
+               last24h_actual,
+               last24h_values);
+               } */
+            let current_aqip1 = current_aqip1
+                .map(|v| v.get_asdebs())
+                .unwrap_or(i32::MAX); // FIXME: Handle Average last 24h p1 outside scale
+            let current_aqip2 = AQIValue::from_pm25(lastday_aggregate.p2())
+                .map(|v| v.get_asdebs())
+                .unwrap_or(i32::MAX); // FIXME: Handle Average last 24h p2 outside scale
+
+            crate::gen::challenger::TopKCities {
+                position: position as i32,
+                city: locations.lookup(city.cityid).to_owned(),
+                current_aqip1,
+                current_aqip2,
+                average_aqi_improvement: -city.improvement,
+               }
+        })
+        .collect::<Vec<_>>();
+    crate::gen::challenger::ResultQ1 {
+        benchmark_id: 0, 
+        batch_seq_id: 0, // TODO get batch_seq_id
+        topkimproved: result,
+    }
+}
+
+/// Runs the full query 1 pipeline using the input iterator batches_iter and locations to localize
+/// the measurements
 pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<Item=Batch> + Send) {
     let localize = |meas : Measurement, batch_seq_id: i64| {
         if meas.latitude < 47.40724 || meas.latitude > 54.9079 || meas.longitude < 5.98815 || meas.longitude > 14.98853 {
@@ -68,10 +174,6 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
         .partition_5min()
         .preaggregate();
 
-    struct TopKCity {
-        improvement: i32,
-        cityid: CityId,
-    }
     struct SlidingWindowContents {
         current_1d_aggregates: CityParticleMap,
         current_5d_aggregates: CityParticleMap,
@@ -146,91 +248,14 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                 };
                 (current_1d_aggregates, current_5d_aggregates, lastyear_5d_aggregates, newcache)
             };
-
-
-            let mut improvements = current_aggregates
-                .into_par_iter()
-                .filter(|(cityid, _)| active_cities.is_active(*cityid))
-                .filter_map(|(cityid, aggregate)| {
-                    // Get this year's 5 day AQI
-                    let current_aqip1 = AQIValue::from_pm10(aggregate.p1())?;//.expect("Average current p1 invalid");
-                    let current_aqip2 = AQIValue::from_pm25(aggregate.p2())?;//.expect("Average current p2 invalid");
-                    let current_aqi = current_aqip1.get_asdebs().max(current_aqip2.get_asdebs());
-
-                    // Get last year's 5 day AQI
-                    // If no sensor data was available in given city for lastyear window period,
-                    // calculation of improvement is impossible. Skip those cases.
-                    let lastyear_aggregate = lastyear_aggregates.get(&cityid)?;
-                    let lastyear_aqip1 = AQIValue::from_pm10(lastyear_aggregate.p1())?;//.expect("Average lastyear p1 invalid");
-                    let lastyear_aqip2 = AQIValue::from_pm25(lastyear_aggregate.p2())?;//.expect("Average lastyear p2 invalid");
-                    let lastyear_aqi = lastyear_aqip1.get_asdebs().max(lastyear_aqip2.get_asdebs());
-
-                    let improvement = current_aqi - lastyear_aqi;
-
-                    Some(TopKCity {
-                        improvement,
-                        cityid
-                    })
-                })
-                .collect::<Vec<TopKCity>>();
-            improvements.sort_by_key(|x| x.improvement);
-            let result = improvements.into_iter()
-                .take(50) // top 50
-                .enumerate()
-                .map(|(position, city)| {
-
-                    // Calculate the aggregate for the lasy day (only for the top 50)
-                    assert!(active_cities.is_active(city.cityid));
-                    let lastday_aggregate = last_day_aqi
-                        .get(&city.cityid)
-                        .expect("Know city is contained in last 10 min");
-                    let current_aqip1 = AQIValue::from_pm10(lastday_aggregate.p1());
-                    #[cfg(debug_assertions)]
-                    if current_aqip1.is_none() {
-                        println!(
-                            "24h p1 for city {} (cityid {}) outside scale",
-                            locations.lookup(city.cityid).to_owned(),
-                            city.cityid
-                        );
-                        let last24h_iter = window
-                            .current
-                            .clone()
-                            .rev()
-                            .take(24*(60/5) - 1)
-                            .filter_map(|city_aggregate_map| city_aggregate_map.get(&city.cityid));
-                        let last24h_values = last24h_iter
-                            .clone()
-                            .copied()
-                            .collect::<Vec<ParticleAggregate>>();
-                        let last24h_actual = last24h_iter.copied().collect::<ParticleAggregate>();
-                        println!(
-                            " Cached 24h p1: {:?}, actual: {:?}, values:\n{:?}",
-                            cache.current_1d_aggregates.get(&city.cityid),
-                            last24h_actual,
-                            last24h_values);
-                    }
-                    let current_aqip1 = current_aqip1
-                        .map(|v| v.get_asdebs())
-                        .unwrap_or(i32::MAX); // FIXME: Handle Average last 24h p1 outside scale
-                    let current_aqip2 = AQIValue::from_pm25(lastday_aggregate.p2())
-                        .map(|v| v.get_asdebs())
-                        .unwrap_or(i32::MAX); // FIXME: Handle Average last 24h p2 outside scale
-
-                    crate::gen::challenger::TopKCities {
-                        position: position as i32,
-                        city: locations.lookup(city.cityid).to_owned(),
-                        current_aqip1,
-                        current_aqip2,
-                        average_aqi_improvement: -city.improvement,
-                    }
-                })
-                .collect::<Vec<_>>();
-            let res = crate::gen::challenger::ResultQ1 {
-                benchmark_id: 0,
-                batch_seq_id: 0,
-                topkimproved: result,
-            };
-            (res, cache)
+            ((active_cities, last_day_aqi, current_aggregates, lastyear_aggregates), cache)
+        })
+        .map(|(active_cities, last_day_aqi, current_aggregates, lastyear_aggregates)| {
+            let improvements = calc_improvements(&active_cities, current_aggregates, lastyear_aggregates);
+            (improvements, active_cities, last_day_aqi)
+        })
+        .map(|(improvements, active_cities, last_day_aqi)| {
+            get_top_cities(improvements, &active_cities, &last_day_aqi, &locations)
         });
 
     for _res in resiter {
