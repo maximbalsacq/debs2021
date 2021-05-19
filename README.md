@@ -109,7 +109,11 @@ will be implemented/added to verify the output of the q1 binary.
 
 
 # Development
+## Documentation
+The code contains documentation annotations.
+The full HTML documentation can be generated and viewed using
 ```sh
+cargo doc --open --document-private-items
 ```
 
 ## Testing
