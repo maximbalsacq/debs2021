@@ -1,3 +1,5 @@
+/// Represents an AQI value calculated from
+/// particle concentrations
 #[derive(Debug, Copy, Clone)]
 pub struct AQIValue(f32);
 
