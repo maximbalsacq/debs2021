@@ -114,51 +114,6 @@ struct LocationCacheItem {
     rsquare: f32,
 }
 
-impl PartialEq for LocationCacheItem {
-    fn eq(&self, other: &Self) -> bool {
-        self.rsquare == other.rsquare && self.x == other.x && self.y == other.y
-    }
-}
-impl Eq for LocationCacheItem {}
-
-impl PartialOrd for LocationCacheItem {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering;
-        match self.rsquare.partial_cmp(&other.rsquare) {
-            o @ Some(Ordering::Less | Ordering::Greater) => o,
-            Some(Ordering::Equal) => match self.x.partial_cmp(&other.x) {
-                o @ Some(Ordering::Less | Ordering::Greater) => o,
-                Some(Ordering::Equal) => self.y.partial_cmp(&other.y),
-                None => None
-            }
-            None => None,
-        }
-    }
-}
-
-impl Ord for LocationCacheItem {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(&other).unwrap()
-    }
-}
-
-impl RTreeObject for LocationCacheItem {
-    type Envelope = AABB<[f32; 2]>;
-
-    fn envelope(&self) -> Self::Envelope {
-        AABB::from_point([self.x, self.y])
-    }
-}
-
-impl PointDistance for LocationCacheItem {
-    fn distance_2(
-        &self,
-        point: &[f32; 2],
-    ) -> <[f32;2] as Point>::Scalar {
-        self.envelope().distance_2(point)
-    }
-}
-
 use std::sync::RwLock;
 
 /// Amount of items in a LocationCache.
@@ -259,7 +214,6 @@ impl LocationCache {
             y: latitude,
             rsquare,
         });
-        // items.sort();
     }
 }
 
