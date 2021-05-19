@@ -117,7 +117,7 @@ cargo doc --open --document-private-items
 ```
 
 ## Testing
-See [TESTING.md](Testing.md).
+See [TESTING.md](TESTING.md).
 
 ## Benchmarking
 Currently, only one benchmark exsists,
