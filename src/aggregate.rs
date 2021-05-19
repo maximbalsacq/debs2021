@@ -8,7 +8,7 @@ pub struct LocalizedMeasurement {
     /// The sequence number of the source batch
     pub batch_seq_id: i64,
     /// The city id which can be used to look up
-    /// the city name using [AnalysisLocations::lookup].
+    /// the city name using [AnalysisLocations::lookup](crate::AnalysisLocations::lookup)
     pub cityid: CityId,
     /// The timestamp of the measurement.
     /// Contrary to the generated source,
@@ -584,7 +584,7 @@ impl std::ops::BitOr for ActiveCities {
 pub type CityParticleMap = std::collections::HashMap<CityId, ParticleAggregate>;
 // type CityParticleMap = std::collections::BTreeMap<CityId, ParticleAggregate>;
 
-/// Calculates a[k] += b[k] for every key k in b
+/// Calculates a\[k\] += b\[k]\ for every key k in b
 pub(crate) fn map_add(a: &mut CityParticleMap, b: &CityParticleMap) {
     for (k, v2) in b {
         match a.get_mut(&k) {
@@ -594,7 +594,7 @@ pub(crate) fn map_add(a: &mut CityParticleMap, b: &CityParticleMap) {
     }
 }
 
-/// Calculates a[k] -= b[k] for every key k in b
+/// Calculates a\[k\] -= b\[k\] for every key k in b
 pub(crate) fn map_sub(a: &mut CityParticleMap, b: &CityParticleMap) {
     for (k, v2) in b {
         match a.get_mut(k) {

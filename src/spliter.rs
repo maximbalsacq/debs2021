@@ -99,9 +99,7 @@ where
 }
 
 
-/// Splits an iterator which yields a 2-tuple into a
-/// pair of two iterators, each iterator returns the corresponding
-/// item of the 2-tuple.
+/// Splits an iterator yielding tuples. See [Spliter::spliter]
 fn split<A, B, It>(it: It) -> IterPair<First<A, B, It>, Second<A, B, It>>
 where
     It: Iterator<Item = (A, B)>,
@@ -121,7 +119,9 @@ pub struct IterPair<A,B>(pub A, pub B);
 
 /// Convenience trait to be able to split an iterator yielding 2-tuples.
 pub trait Spliter<A,B> : Iterator<Item=(A,B)> {
-    /// Splits an iterator yielding tuples. See [split]
+    /// Splits an iterator which yields a 2-tuple into a
+    /// pair of two iterators, each iterator returns the corresponding
+    /// item of the 2-tuple.
     fn spliter(self) -> IterPair<First<A, B, Self>, Second<A, B, Self>> where Self: Sized {
         split(self)
     }
