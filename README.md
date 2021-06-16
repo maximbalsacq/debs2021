@@ -96,16 +96,8 @@ to be set correctly.
 #### `geo2sql`/`batch2ql`
 geo2sql and batch2sql convert location info and
 batch data to SQL, respectively.
-The generated SQL files use the schema created by the following
 
-```sql
-CREATE TABLE locations(postalcode text primary key, city text not null, geog geometry(multipolygon));
-CREATE TABLE meas_current(batchnum integer, at timestamp, location geometry(point), p1 double precision, p2 double precision);
-CREATE TABLE meas_lastyear(batchnum integer, at timestamp, location geometry(point), p1 double precision, p2 double precision);
-```
-
-In the future, SQL statements replicating the functionality of query 1
-will be implemented/added to verify the output of the q1 binary.
+For details, see the [sql/](sql/) subfolder.
 
 
 # Development
