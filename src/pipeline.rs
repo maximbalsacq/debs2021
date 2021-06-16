@@ -179,7 +179,7 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
         current_5d_aggregates: CityParticleMap,
         lastyear_5d_aggregates: CityParticleMap,
     }
-    let resiter = IterPair(current_iter, lastyear_iter)
+    let mut resiter = IterPair(current_iter, lastyear_iter)
         .with_analysis_windows(5*24*(60/5), 5*24*(60/5), |window, cache: Option<SlidingWindowContents>| {
             debug_assert_eq!(window.current.len(), 5*24*(60/5));
             debug_assert_eq!(window.lastyear.len(), 5*24*(60/5));
@@ -257,6 +257,9 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
         .map(|(improvements, active_cities, last_day_aqi)| {
             get_top_cities(improvements, &active_cities, &last_day_aqi, &locations)
         });
+
+    let first = resiter.next().unwrap();
+    println!("First: {:#?}", first);
 
     for _res in resiter {
         // dbg!(res.topkimproved);

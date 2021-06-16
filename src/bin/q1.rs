@@ -44,7 +44,7 @@ pub async fn main() {
     let batch_iter = (0..5000)
         .map(|i| { load_batch(&root, i).expect("Loading of batch failed") });
     */
-    let batch_iter = start_batch_loader_thread(&root, 0..5000)
+    let batch_iter = start_batch_loader_thread(&root, 0..100000)
         .into_iter()
         .map(|b| b.expect("Loading of batch failed"));
 
