@@ -55,7 +55,7 @@ Contrary to the binary,
 all cities are calculated (not only the top 50).
 The data is calculated for the first pair of 5-day windows.
 (2020-03-01 00:00:00 to 2020-03-06 00:00:00 for current year,
-2019-03-02 00:00:00 to 2019-03-07 00:00:00 for current year.
+2019-03-02 00:00:00 to 2019-03-07 00:00:00 for the last year).
 For other times, `calculate.sql` will need to be adapted.
 
 
