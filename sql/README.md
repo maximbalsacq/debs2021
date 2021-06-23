@@ -48,7 +48,7 @@ psql -f import.sql
 # Calculating top cities with SQL
 Use
 ```bash
-psq; -f calculate.sql | tee results.out
+psql -f calculate.sql | tee results.out
 ```
 to calculate the list of top cities.
 Contrary to the binary,
