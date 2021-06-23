@@ -11,8 +11,8 @@ CREATE OR REPLACE FUNCTION aqi_p1("p1" NUMERIC)
 RETURNS DOUBLE PRECISION
 LANGUAGE SQL
 AS $$
-SELECT ((imax - imin) / (bpmax - bpmin) * ("p1" - bpmin) + imin) as aqi
-FROM pm25_rows
+SELECT ((imax - imin) / (bpmax - bpmin) * (round("p1"::numeric) - bpmin) + imin) as aqi
+FROM pm10_rows
 WHERE "p1" between bpmin AND bpmax;
 $$;
 
@@ -23,8 +23,8 @@ CREATE OR REPLACE FUNCTION aqi_p2("p2" NUMERIC)
 RETURNS DOUBLE PRECISION
 LANGUAGE SQL
 AS $$
-SELECT ((imax - imin) / (bpmax - bpmin) * ("p2" - bpmin) + imin) as aqi
-FROM pm10_rows
+SELECT ((imax - imin) / (bpmax - bpmin) * (round("p2"::numeric,1) - bpmin) + imin) as aqi
+FROM pm25_rows
 WHERE "p2" between bpmin AND bpmax;
 $$;
 
