@@ -154,12 +154,17 @@ mod tests {
         assert_eq!(AQIValue::from_pm25(55.549).map(AQIValue::get), Some(151));
         assert_eq!(AQIValue::from_pm25(500.4).map(AQIValue::get), Some(500));
         assert_eq!(AQIValue::from_pm25(55.56).map(AQIValue::get_asdebs), Some(151052));
+        assert_eq!(AQIValue::from_pm25(3.454).map(AQIValue::get_asdebs), Some(14583));
+        assert_eq!(AQIValue::from_pm25(12.095798).map(AQIValue::get_asdebs), Some(51000));
     }
+
 
     #[test]
     fn test_valid_pm10_aqis() {
         assert_eq!(AQIValue::from_pm10(0.0).map(AQIValue::get), Some(0));
         assert_eq!(AQIValue::from_pm10(155.049).map(AQIValue::get), Some(101));
         assert_eq!(AQIValue::from_pm10(604.49).map(AQIValue::get), Some(500));
+        assert_eq!(AQIValue::from_pm10(7.9).map(AQIValue::get_asdebs), Some(7407));
+        assert_eq!(AQIValue::from_pm10(30.263).map(AQIValue::get_asdebs), Some(27778));
     }
 }
