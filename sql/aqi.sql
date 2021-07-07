@@ -13,7 +13,7 @@ LANGUAGE SQL
 AS $$
 SELECT ((imax - imin) / (bpmax - bpmin) * (round("p1"::numeric) - bpmin) + imin) as aqi
 FROM pm10_rows
-WHERE "p1" between bpmin AND bpmax;
+WHERE round("p1"::numeric) between bpmin AND bpmax;
 $$;
 
 
@@ -25,7 +25,7 @@ LANGUAGE SQL
 AS $$
 SELECT ((imax - imin) / (bpmax - bpmin) * (round("p2"::numeric,1) - bpmin) + imin) as aqi
 FROM pm25_rows
-WHERE "p2" between bpmin AND bpmax;
+WHERE round("p2"::numeric,1) between bpmin AND bpmax;
 $$;
 
 -- Calculates the aqi by using two particle concentrations
