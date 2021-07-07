@@ -4,13 +4,13 @@
 WITH current(cityname, p1, p2) AS
     (SELECT l.city, round(avg(p1)::numeric,3) as mp1, round(avg(p2)::numeric,3) as mp2
     FROM locations l, meas_current m
-    WHERE ST_Contains(l.geog, m.location) AND at BETWEEN (to_timestamp(1583020800) AT TIME ZONE 'GMT') AND (to_timestamp(1583020800+60*60*24*5) AT TIME ZONE 'GMT')
+    WHERE ST_Contains(l.geog, m.location) AND at BETWEEN (to_timestamp(1583020800) AT TIME ZONE 'GMT') AND (to_timestamp(1583020800-1+60*60*24*5) AT TIME ZONE 'GMT')
     GROUP BY city
     ORDER BY mp1 DESC),
 lastyear(cityname, p1, p2) AS
     (SELECT l.city, round(avg(p1)::numeric,3) as mp1, round(avg(p2)::numeric,3) as mp2
     FROM locations l, meas_lastyear m
-    WHERE ST_Contains(l.geog, m.location) AND at BETWEEN (to_timestamp(1583020800-31536000) AT TIME ZONE 'GMT') AND (to_timestamp(1583020800-31536000+60*60*24*5) AT TIME ZONE 'GMT')
+    WHERE ST_Contains(l.geog, m.location) AND at BETWEEN (to_timestamp(1583020800-31536000) AT TIME ZONE 'GMT') AND (to_timestamp(1583020800-1-31536000+60*60*24*5) AT TIME ZONE 'GMT')
     GROUP BY city
     ORDER BY mp1 DESC)
 SELECT
