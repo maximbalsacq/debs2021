@@ -7,8 +7,9 @@ use crate::gen::challenger::{Batch,Measurement};
 
 /// Aggregates multiple preaggregated values for every city
 // FIXME: This could probably simplified/reduced to preaggregated.fold(map_add())
-fn get_final_aggregate<'a>(preaggregated: impl Iterator<Item = &'a CityParticleMap>) -> CityParticleMap {
+fn get_final_aggregate<'a>(preaggregated: impl Iterator<Item = &'a PreAggregateData>) -> CityParticleMap {
     preaggregated
+        .map(|x| &x.values)
         .flatten()
         .fold(
             CityParticleMap::default(),
@@ -64,7 +65,7 @@ fn calc_improvements(active_cities: &ActiveCities, current_aggregates: CityParti
 
 /// Uses the list of improvements to generate the final result containing
 /// position, city name, the improvement and current air quality.
-fn get_top_cities(improvements: Vec<TopKCity>, active_cities: &ActiveCities, last_day_aqi: &CityParticleMap, locations: &AnalysisLocations) -> crate::gen::challenger::ResultQ1 {
+fn get_top_cities(improvements: Vec<TopKCity>, active_cities: &ActiveCities, last_day_aqi: &CityParticleMap, locations: &AnalysisLocations, maxbatch: i64) -> crate::gen::challenger::ResultQ1 {
     let result = improvements.into_iter()
         .take(50) // top 50
         .enumerate()
@@ -118,7 +119,7 @@ fn get_top_cities(improvements: Vec<TopKCity>, active_cities: &ActiveCities, las
         .collect::<Vec<_>>();
     crate::gen::challenger::ResultQ1 {
         benchmark_id: 0, 
-        batch_seq_id: 0, // TODO get batch_seq_id
+        batch_seq_id: maxbatch,
         topkimproved: result,
     }
 }
@@ -183,12 +184,18 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
         .with_analysis_windows(5*24*(60/5), 5*24*(60/5), |window, cache: Option<SlidingWindowContents>| {
             debug_assert_eq!(window.current.len(), 5*24*(60/5));
             debug_assert_eq!(window.lastyear.len(), 5*24*(60/5));
+            let maxbatch_current = window.current.clone().last().map(|x| x.maxbatch).unwrap();
+            let maxbatch_lastyear = window.lastyear.clone().last().map(|x| x.maxbatch).unwrap();
+            let maxbatch : i64 = maxbatch_current.into_iter()
+                .chain(maxbatch_lastyear.into_iter())
+                .max()
+                .expect("Timestamp advanced without any data in either time period");
             let active_cities = window.current
                 .clone() // only clones the iterator, not the underlying values
                 .rev()
                 .take(2) // get last 2 batches of 5 minutes = 10 minute window
-                .flat_map(|city_aggregate_map : &CityParticleMap| city_aggregate_map.into_iter().map(|(k,_v)| k))
-                .cloned() // clone city ids. since this is a u32, it should be a simple copy
+                .flat_map(|city_aggregate_map : &PreAggregateData| city_aggregate_map.values.iter().map(|(k,_v)| k))
+                .copied()
                 .collect::<ActiveCities>();
             /* {
                 let current_samples = window.current.clone().map(|x| x.len()).sum::<usize>();
@@ -200,8 +207,8 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                 let (current_1d_aggregates, current_5d_aggregates, lastyear_5d_aggregates) = if let Some(SlidingWindowContents { current_1d_aggregates, current_5d_aggregates, lastyear_5d_aggregates }) = cache {
                     // cache exists add values from cache to newest value
                     // to obtain the value for this window
-                    let newest : &CityParticleMap = window.current.clone().last().unwrap();
-                    let newest_lastyear : &CityParticleMap = window.lastyear.clone().last().unwrap();
+                    let newest : &CityParticleMap = &window.current.clone().last().unwrap().values;
+                    let newest_lastyear : &CityParticleMap = &window.lastyear.clone().last().unwrap().values;
                     let mut new_current_1d_aggregates = newest.clone();
                     let mut new_current_5d_aggregates = newest.clone();
                     let mut new_lastyear_5d_aggregates = newest_lastyear.clone();
@@ -226,20 +233,20 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                 // remove the first CityParticleMap from one day ago
                 let oldest_current_1d = window.current.clone().rev().nth(24*(60/5)-1).unwrap();
                 let mut current_1d_aggregates_tocache = current_1d_aggregates.clone();
-                map_sub(&mut current_1d_aggregates_tocache, oldest_current_1d);
+                map_sub(&mut current_1d_aggregates_tocache, &oldest_current_1d.values);
 
 
                 // remove the first CityParticleMap from 5 days ago
                 // since the window is exactly 5 days big, this should be the first item
                 let oldest_current_5d = window.current.clone().next().unwrap();
                 let mut current_5d_aggregates_tocache = current_5d_aggregates.clone();
-                map_sub(&mut current_5d_aggregates_tocache, oldest_current_5d);
+                map_sub(&mut current_5d_aggregates_tocache, &oldest_current_5d.values);
 
                 // remove the first CityParticleMap from 1 year 5 days ago
                 // since the window is exactly 5 days big, this should be the first item
                 let oldest_lastyear_5d = window.lastyear.clone().next().unwrap();
                 let mut lastyear_5d_aggregates_tocache = lastyear_5d_aggregates.clone();
-                map_sub(&mut lastyear_5d_aggregates_tocache, oldest_lastyear_5d);
+                map_sub(&mut lastyear_5d_aggregates_tocache, &oldest_lastyear_5d.values);
 
                 let newcache = SlidingWindowContents {
                     current_1d_aggregates: current_1d_aggregates_tocache,
@@ -248,21 +255,20 @@ pub fn run_pipeline(locations: AnalysisLocations, batches_iter: impl Iterator<It
                 };
                 (current_1d_aggregates, current_5d_aggregates, lastyear_5d_aggregates, newcache)
             };
-            ((active_cities, last_day_aqi, current_aggregates, lastyear_aggregates), cache)
+            ((active_cities, last_day_aqi, current_aggregates, lastyear_aggregates, maxbatch), cache)
         })
-        .map(|(active_cities, last_day_aqi, current_aggregates, lastyear_aggregates)| {
+        .map(|(active_cities, last_day_aqi, current_aggregates, lastyear_aggregates, maxbatch)| {
             let improvements = calc_improvements(&active_cities, current_aggregates, lastyear_aggregates);
-            (improvements, active_cities, last_day_aqi)
+            (improvements, active_cities, last_day_aqi, maxbatch)
         })
-        .map(|(improvements, active_cities, last_day_aqi)| {
-            get_top_cities(improvements, &active_cities, &last_day_aqi, &locations)
+        .map(|(improvements, active_cities, last_day_aqi, maxbatch)| {
+            get_top_cities(improvements, &active_cities, &last_day_aqi, &locations, maxbatch)
         });
 
-    let first = resiter.next().unwrap();
-    println!("First: {:#?}", first);
-
-    for _res in resiter {
-        // dbg!(res.topkimproved);
+    for res in resiter {
+        if (res.batch_seq_id + 10) % 10000 <= 20 {
+            println!("{:#?}", res);
+        }
     }
     use std::sync::atomic::Ordering;
     println!("Cache hits/misses/outside: {}/{}/{}", locations.cachehits.load(Ordering::SeqCst), locations.cachemisses.load(Ordering::SeqCst), locations.outsidecachehits.load(Ordering::SeqCst));

@@ -342,6 +342,15 @@ impl AnalysisLocations {
     pub fn lookup(&self, cityid: CityId) -> &str {
         &self.known_cities[cityid as usize]
     }
+
+    /// Looks up the city id using the name of a city.
+    pub fn inverse_lookup(&self, cityname: &str) -> Option<CityId> {
+        use std::convert::TryInto;
+        self.known_cities
+            .iter()
+            .position(|x| x == cityname)
+            .map(|idx| idx.try_into().unwrap())
+    }
 }
 
 #[cfg(test)]
