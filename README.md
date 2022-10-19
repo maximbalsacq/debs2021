@@ -2,15 +2,19 @@
 The code in this repository aims to solve the
 [DEBS Grand Challenge 2021](https://2021.debs.org/call-for-grand-challenge-solutions/).
 
+More details about the challenge and the solution
+can be found in the [thesis](thesis.pdf) (written in german).
 
 # Usage
 ## Rust Installation
 This project is written in the Rust programming language.
-If the Rust-specific is not yet installed on your machine,
+If Rust-specific tooling is not yet installed on your machine,
 visit the [rustup](https://rustup.rs/) website and follow the installation instructions.
 
 ## Setup and Configuration
-Download the data from [the shared folder](https://bwsyncandshare.kit.edu/s/caadGD4AKiHbCPR)
+**Due to the large data volume, the data is only available on request.
+Contact me and we'll figure out something.**
+Download the data ~~from [the shared folder](https://bwsyncandshare.kit.edu/s/caadGD4AKiHbCPR)~~
 and save it into a folder. This folder will be considered the root folder of the data. 
 The total dataset consists of about 32 GiB of data.
 
@@ -119,7 +123,3 @@ Use
 cargo bench
 ```
 to run all benchmarks.
-
-
-# Architecture
-TODO
